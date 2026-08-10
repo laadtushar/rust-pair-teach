@@ -18,6 +18,16 @@ Every contribution is reviewed against this. Concretely, a change is rejected if
 Agentic editors have set the expectation that a tool will finish your code for you. Pressure toward
 more agency will arrive in PRs. That pressure is the thing this project exists to resist.
 
+Two of these are now enforced by tests rather than by review, because a rule defended only by
+reviewers erodes one reasonable-sounding exception at a time:
+
+- `checkHintRespectsLadder` rejects a level-1 or level-2 hint containing solution-shaped code,
+  fenced or not, whatever model produced it.
+- `generatedIsSkeletonOnly` proves a scaffolded file contains nothing but `todo!()` bodies.
+
+If you find yourself needing to weaken either check to land a change, that is the signal to discuss
+the change rather than the check.
+
 ## Other standing rules
 
 - **Detection never calls an LLM.** Trigger heuristics stay local, cheap, and instant. If a
