@@ -1,4 +1,5 @@
 import type { ConceptId, DiagnosticSignature } from '../types.js';
+import type { Lesson } from './lessonTypes.js';
 
 /**
  * Chapter packs are DATA, never code.
@@ -41,6 +42,8 @@ export interface ConceptEntry {
 export interface ChapterPack {
   meta: ChapterMeta;
   concepts: ConceptEntry[];
+  /** Ordered guided lessons. Empty for packs that only teach reactively. */
+  lessons: Lesson[];
 }
 
 /** Thrown with a specific, noisy message — silent partial parses are how schema drift hides. */

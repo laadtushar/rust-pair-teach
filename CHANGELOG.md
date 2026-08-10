@@ -3,6 +3,29 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.3.0 — a course, not just a safety net
+
+You no longer need to already be writing Rust for this to be useful. Open the sidebar and there is a
+lesson waiting.
+
+**New**
+
+- **Learn Rust from scratch** — eight guided lessons, from getting a program to run through to
+  writing tests, with ownership and borrowing in the middle where they belong. The sidebar opens on
+  the course rather than on an empty panel.
+- Every lesson is a **checklist you complete by writing code**. Steps tick themselves as you go —
+  create the file, change the message, run the command. Nothing is written for you.
+- Several lessons ask you to **break your code on purpose** and read the compiler error. That is not
+  filler: reading Rust's errors is the skill, and the earlier it stops being frightening the better.
+- Lessons are listed with your progress, and you can jump to any of them. Finished a lesson the
+  checks did not notice? Continue anyway — the checks are hints, not a gate.
+- **Start learning Rust** is available from the command palette too.
+
+**Notes**
+
+The course needs no AI at all. A model, if you connect one, personalises the hints you get when you
+get stuck *inside* a lesson — the lessons themselves are written material.
+
 ## 0.2.0 — it actually teaches now
 
 The first build you can use. Open a Rust file, get stuck, and the sidebar asks you a question.

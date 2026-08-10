@@ -1,4 +1,5 @@
 import type { Hint } from './lesson/staticHint.js';
+import type { LessonState } from './course.js';
 import type { ActiveLesson } from './session.js';
 
 /**
@@ -42,4 +43,55 @@ export function lessonView(lesson: ActiveLesson): LessonView {
 
 function explainOf(hint: Hint | undefined): string | null {
   return hint?.explainCommand ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Course view
+// ---------------------------------------------------------------------------
+
+
+export interface CourseStepView {
+  instruction: string;
+  hint: string | null;
+  done: boolean;
+}
+
+export interface CourseView {
+  kind: 'course';
+  lessonTitle: string;
+  goal: string;
+  /** Teaching narrative, markdown. */
+  body: string;
+  position: string;
+  steps: CourseStepView[];
+  ready: boolean;
+  /** Null on the last lesson. */
+  nextLabel: string | null;
+}
+
+export interface CourseMenuView {
+  kind: 'menu';
+  heading: string;
+  subheading: string;
+  progress: { done: number; total: number };
+  lessons: Array<{ id: string; title: string; goal: string; done: boolean; current: boolean }>;
+  /** Shown when no model is configured — the course works regardless. */
+  setupNotice: string | null;
+}
+
+export function courseView(state: LessonState, hints: Array<string | undefined>): CourseView {
+  return {
+    kind: 'course',
+    lessonTitle: state.lesson.title,
+    goal: state.lesson.goal,
+    body: state.lesson.body,
+    position: `Lesson ${String(state.index + 1)} of ${String(state.total)}`,
+    steps: state.steps.map((s, i) => ({
+      instruction: s.step.instruction,
+      hint: hints[i] ?? null,
+      done: s.done,
+    })),
+    ready: state.ready,
+    nextLabel: state.index + 1 < state.total ? 'Mark done and continue' : 'Finish the course',
+  };
 }

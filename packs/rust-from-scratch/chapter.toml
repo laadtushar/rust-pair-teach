@@ -1,0 +1,6 @@
+id = "rust-from-scratch"
+language = "rust"
+version = "0.1.0"
+schemaVersion = 1
+title = "Rust from scratch"
+prerequisites = []

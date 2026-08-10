@@ -2,7 +2,7 @@
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
   "description": "An editor-native tutor that watches your Rust and teaches with tiered hints instead of writing your code.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -13,11 +13,16 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onLanguage:rust"
+    "onLanguage:rust",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "rustPairTeacher.startCourse",
+        "title": "Rust Pair Teacher: Start learning Rust"
+      },
       {
         "command": "rustPairTeacher.setupModel",
         "title": "Rust Pair Teacher: Set up a teaching model"
@@ -92,7 +97,7 @@
         {
           "type": "webview",
           "id": "rustPairTeacher.lesson",
-          "name": "Lesson"
+          "name": "Learn Rust"
         }
       ]
     }

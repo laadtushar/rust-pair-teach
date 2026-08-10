@@ -1,6 +1,7 @@
 import { parse as parseToml } from 'smol-toml';
 
-import { indexBySignature, validateConcept, validateMeta } from './schema.js';
+import { indexBySignature, validateConcept, validateLesson, validateMeta } from './schema.js';
+import type { Lesson } from './lessonTypes.js';
 import { PackValidationError, type ChapterPack, type ConceptEntry } from './types.js';
 
 export interface RawPackFiles {
@@ -8,6 +9,8 @@ export interface RawPackFiles {
   chapter: string;
   /** concepts/*.md, keyed by filename for error messages */
   concepts: Array<{ name: string; content: string }>;
+  /** lessons/*.md in course order, decided by filename */
+  lessons?: Array<{ name: string; content: string }>;
 }
 
 const FRONT_MATTER = /^\+\+\+\r?\n([\s\S]*?)\r?\n\+\+\+\r?\n?/;
@@ -65,7 +68,19 @@ export function parsePack(files: RawPackFiles): ChapterPack {
     seen.add(c.id);
   }
 
-  const pack: ChapterPack = { meta, concepts };
+  const lessons: Lesson[] = (files.lessons ?? []).map(({ name, content }) => {
+    const where = `${meta.id}/lessons/${name}`;
+    const { front, body } = splitFrontMatter(content, where);
+    return validateLesson(front, body, where);
+  });
+
+  const lessonIds = new Set<string>();
+  for (const l of lessons) {
+    if (lessonIds.has(l.id)) throw new PackValidationError(`duplicate lesson id "${l.id}"`, meta.id);
+    lessonIds.add(l.id);
+  }
+
+  const pack: ChapterPack = { meta, concepts, lessons };
   indexBySignature(pack); // throws on conflicting signature claims
   return pack;
 }

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir } from 'node:fs/promises';
 
 import * as vscode from 'vscode';
@@ -18,7 +19,9 @@ import { toSignature } from '../core/signature.js';
 import { interpret, Telemetry } from '../core/telemetry.js';
 import { TutorSession } from '../core/session.js';
 import type { DiagnosticObservation } from '../core/types.js';
-import { lessonView } from '../core/viewModel.js';
+import { courseView, lessonView, type CourseMenuView } from '../core/viewModel.js';
+import { Course, emptyProgress, type CourseProgress } from '../core/course.js';
+import type { WorkspaceView } from '../core/action/types.js';
 import { TutorSidebar, type SidebarAction } from './sidebar.js';
 
 const LANGUAGE = 'rust';
@@ -58,6 +61,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     output.appendLine(`[packs] failed to load: ${String(err)}`);
   }
 
+  // ---- guided course -------------------------------------------------------
+  let course: Course | null = null;
+  const progressKey = 'rustPairTeacher.courseProgress';
+  const loadProgress = (): CourseProgress =>
+    context.globalState.get<CourseProgress>(progressKey) ?? emptyProgress();
+  const saveProgress = (p: CourseProgress) => void context.globalState.update(progressKey, p);
+
+  try {
+    const coursePack = await loadPackFromDisk(
+      vscode.Uri.joinPath(context.extensionUri, 'packs', 'rust-from-scratch').fsPath
+    );
+    for (const [key, concept] of indexBySignature(coursePack)) {
+      if (!conceptIndex.has(key)) conceptIndex.set(key, concept);
+    }
+    course = new Course(coursePack.lessons, loadProgress());
+    output.appendLine(`[course] ${String(coursePack.lessons.length)} lessons available`);
+  } catch (err) {
+    output.appendLine(`[course] failed to load: ${String(err)}`);
+  }
+
   const engine = new LessonEngine({
     ...(await providerFromSettings(output, context.secrets)),
     onDegraded: (reason) => output.appendLine(`[lesson] offline hint — ${reason}`),
@@ -74,6 +97,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
     },
   });
+
+  const commandsRun: string[] = [];
+  context.subscriptions.push(
+    vscode.window.onDidStartTerminalShellExecution?.((e) => {
+      const line = e.execution.commandLine.value.trim();
+      if (line) commandsRun.push(line);
+      refreshSidebar();
+    }) ?? { dispose: () => undefined }
+  );
+
+  function workspaceView(): WorkspaceView {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    return {
+      exists: (p) => (root ? existsSync(vscode.Uri.joinPath(root, p).fsPath) : false),
+      read: (p) => {
+        if (!root) return null;
+        try {
+          return readFileSync(vscode.Uri.joinPath(root, p).fsPath, 'utf8');
+        } catch {
+          return null;
+        }
+      },
+      commandsRun,
+    };
+  }
 
   const sidebar = new TutorSidebar(context.extensionUri, (action) => {
     void handleAction(action);
@@ -116,6 +164,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (e.document.languageId !== LANGUAGE) return;
       editStream.onEdit(e.document.uri.toString(), e.document.getText(), Date.now());
     }),
+    // Step checkmarks are the teaching device — they have to tick as the learner works.
+    vscode.workspace.onDidSaveTextDocument(() => refreshSidebar()),
+    vscode.workspace.onDidCreateFiles(() => refreshSidebar()),
     vscode.languages.onDidChangeDiagnostics((e) => {
       const now = Date.now();
       for (const uri of e.uris) {
@@ -156,7 +207,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (outcome.kind === 'offered') {
       const shown = outcome.lesson.hints[outcome.lesson.hints.length - 1]!;
       telemetry.hintShown(shown.level, outcome.lesson.concept.id, shown.offline);
-      sidebar.show(lessonView(outcome.lesson));
+      sidebar.show({ kind: 'hint', view: lessonView(outcome.lesson) });
       // A gentle pull, never a modal — the sidebar is the teaching surface, not a popup.
       await vscode.commands.executeCommand('setContext', 'rustPairTeacher.hasLesson', true);
     } else {
@@ -164,28 +215,132 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
+  // ---- sidebar state -------------------------------------------------------
+
+  /**
+   * Render whatever the learner should see now.
+   *
+   * A live hint outranks the course, because it is about the code in front of them. Otherwise the
+   * course shows — never an empty panel. Someone who has written no Rust yet is exactly the person
+   * a "nothing to teach right now" screen fails.
+   */
+  function refreshSidebar(): void {
+    if (session.activeLesson) {
+      sidebar.show({ kind: 'hint', view: lessonView(session.activeLesson) });
+      return;
+    }
+    if (!course) return;
+
+    const state = course.refresh(workspaceView());
+    if (state && course.state.current) {
+      const hints = state.lesson.steps.map((st) => st.hint);
+      sidebar.show({ kind: 'course', view: courseView(state, hints) });
+      return;
+    }
+    sidebar.show({ kind: 'menu', view: menuView() });
+  }
+
+  function menuView(): CourseMenuView {
+    const c = course!;
+    const progress = c.overall();
+    const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+    const configured =
+      settings.get<string>('baseUrl', '').trim() !== '' && settings.get<string>('model', '').trim() !== '';
+
+    return {
+      kind: 'menu',
+      heading: progress.done > 0 ? 'Rust, step by step' : 'Learn Rust from scratch',
+      subheading:
+        progress.done > 0
+          ? 'Pick up where you left off, or jump to any lesson.'
+          : 'Eight lessons, from your first program to writing tests. You write every line.',
+      progress,
+      lessons: c.all.map((l) => ({
+        id: l.id,
+        title: l.title,
+        goal: l.goal,
+        done: c.isComplete(l.id),
+        current: c.state.current === l.id,
+      })),
+      setupNotice: configured
+        ? null
+        : 'Hints come from the built-in material right now. Connecting a model personalises them to your code — Ollama is free and runs locally.',
+    };
+  }
+
   async function handleAction(action: SidebarAction): Promise<void> {
     const now = Date.now();
     const lesson = session.activeLesson;
 
-    if (action === 'escalate' && lesson) {
-      const text = documentText(lesson.uri);
-      if (text === null) return;
-      const next = await session.escalate(text, now);
-      if (next) telemetry.hintShown(next.level, lesson.concept.id, next.offline);
-      if (session.activeLesson) sidebar.show(lessonView(session.activeLesson));
-      return;
-    }
+    switch (action.type) {
+      case 'escalate': {
+        if (!lesson) return;
+        const text = documentText(lesson.uri);
+        if (text === null) return;
+        const next = await session.escalate(text, now);
+        if (next) telemetry.hintShown(next.level, lesson.concept.id, next.offline);
+        refreshSidebar();
+        return;
+      }
 
-    if ((action === 'solved' || action === 'dismissed') && lesson) {
-      telemetry.resolved(action === 'solved' ? `self_level_${String(lesson.level)}` as never : 'abandoned');
-      session.resolve(action === 'solved' ? 'solved' : 'dismissed', now);
-      sidebar.clear();
-      return;
-    }
+      case 'solved':
+      case 'dismissed': {
+        if (!lesson) return;
+        telemetry.resolved(
+          action.type === 'solved'
+            ? (`self_level_${String(lesson.level)}` as never)
+            : 'abandoned'
+        );
+        session.resolve(action.type === 'solved' ? 'solved' : 'dismissed', now);
+        refreshSidebar();
+        return;
+      }
 
-    if (action === 'teach_me') {
-      await teachOnDemand(now);
+      case 'teach_me':
+        await teachOnDemand(now);
+        return;
+
+      case 'start_course': {
+        if (!course) return;
+        const next = course.nextLesson();
+        if (next) {
+          course.start(next.id, new Date(now).toISOString());
+          saveProgress(course.state);
+        }
+        refreshSidebar();
+        return;
+      }
+
+      case 'open_lesson': {
+        if (!course || !action.lessonId) return;
+        course.start(action.lessonId, new Date(now).toISOString());
+        saveProgress(course.state);
+        refreshSidebar();
+        return;
+      }
+
+      case 'complete_lesson': {
+        if (!course) return;
+        const open = course.state.current;
+        if (open) {
+          saveProgress(course.complete(open));
+          void vscode.window.showInformationMessage(`Lesson complete: ${open}`);
+        }
+        refreshSidebar();
+        return;
+      }
+
+      case 'show_menu': {
+        if (!course) return;
+        saveProgress({ ...course.state, current: null });
+        course.start('', '');
+        sidebar.show({ kind: 'menu', view: menuView() });
+        return;
+      }
+
+      case 'setup_model':
+        await vscode.commands.executeCommand('rustPairTeacher.setupModel');
+        return;
     }
   }
 
@@ -224,7 +379,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
+  refreshSidebar();
+
   context.subscriptions.push(
+    vscode.commands.registerCommand('rustPairTeacher.startCourse', async () => {
+      await vscode.commands.executeCommand('rustPairTeacher.lesson.focus');
+      await handleAction({ type: 'start_course' });
+    }),
     vscode.commands.registerCommand('rustPairTeacher.openCandidateLog', async () => {
       await flush();
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(logUri));

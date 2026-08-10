@@ -1,3 +1,5 @@
+import type { StepCheck } from '../action/types.js';
+import type { Lesson, LessonStep } from './lessonTypes.js';
 import { signatureKey, type DiagnosticSignature } from '../types.js';
 import {
   PACK_SCHEMA_VERSION,
@@ -177,4 +179,92 @@ export function indexBySignature(pack: ChapterPack): Map<string, ConceptEntry> {
     }
   }
   return index;
+}
+
+
+const ALLOWED_LESSON_KEYS = new Set(['id', 'title', 'goal', 'concepts', 'steps']);
+const ALLOWED_STEP_KEYS = new Set(['instruction', 'hint', 'check']);
+
+/**
+ * Validate one guided lesson.
+ *
+ * The vocabulary of checks is fixed and small on purpose: a downloaded pack must never be able to
+ * describe an arbitrary command to run. If a lesson cannot be expressed here, the vocabulary grows
+ * through a reviewed extension release.
+ */
+export function validateLesson(raw: unknown, body: string, where: string): Lesson {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new PackValidationError('expected TOML front-matter', where);
+  }
+  const obj = raw as Record<string, unknown>;
+  rejectUnknownKeys(obj, ALLOWED_LESSON_KEYS, where);
+
+  const concepts = obj['concepts'] ?? [];
+  if (!Array.isArray(concepts) || concepts.some((c) => typeof c !== 'string')) {
+    throw new PackValidationError('"concepts" must be an array of strings', where);
+  }
+
+  const rawSteps = obj['steps'];
+  if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
+    throw new PackValidationError('a lesson needs at least one step', where);
+  }
+
+  const steps: LessonStep[] = rawSteps.map((rawStep, i) => {
+    const stepWhere = `${where} step ${String(i + 1)}`;
+    if (typeof rawStep !== 'object' || rawStep === null) {
+      throw new PackValidationError('step must be a table', stepWhere);
+    }
+    const step = rawStep as Record<string, unknown>;
+    rejectUnknownKeys(step, ALLOWED_STEP_KEYS, stepWhere);
+
+    const hint = step['hint'];
+    if (hint !== undefined && typeof hint !== 'string') {
+      throw new PackValidationError('"hint" must be a string', stepWhere);
+    }
+
+    return {
+      instruction: requireString(step, 'instruction', stepWhere),
+      ...(typeof hint === 'string' ? { hint } : {}),
+      check: validateCheck(step['check'], stepWhere),
+    };
+  });
+
+  if (body.trim() === '') {
+    throw new PackValidationError('lesson body (the teaching narrative) must not be empty', where);
+  }
+
+  return {
+    id: requireString(obj, 'id', where),
+    title: requireString(obj, 'title', where),
+    goal: requireString(obj, 'goal', where),
+    concepts: concepts as string[],
+    body: body.trim(),
+    steps,
+  };
+}
+
+function validateCheck(raw: unknown, where: string): StepCheck {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new PackValidationError('step needs a "check"', where);
+  }
+  const check = raw as Record<string, unknown>;
+  const kind = check['kind'];
+
+  switch (kind) {
+    case 'file_exists':
+      return { kind: 'file_exists', path: requireString(check, 'path', where) };
+    case 'file_contains':
+      return {
+        kind: 'file_contains',
+        path: requireString(check, 'path', where),
+        pattern: requireString(check, 'pattern', where),
+      };
+    case 'command_run':
+      return { kind: 'command_run', command: requireString(check, 'command', where) };
+    default:
+      throw new PackValidationError(
+        `unknown check kind ${JSON.stringify(kind)} — allowed: file_exists, file_contains, command_run`,
+        where
+      );
+  }
 }
