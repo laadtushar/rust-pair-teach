@@ -1,0 +1,34 @@
+import type { Message } from '../lesson/prompt.js';
+
+export interface CompletionOptions {
+  model: string;
+  maxTokens: number;
+  timeoutMs: number;
+}
+
+export interface Completion {
+  text: string;
+  usage?: { promptTokens?: number; completionTokens?: number };
+}
+
+/**
+ * The single seam every LLM goes through.
+ *
+ * Deliberately tiny. One OpenAI-compatible implementation covers OpenRouter, OpenAI, Groq,
+ * DeepSeek, Ollama and LM Studio, which is what makes "run it locally for free" a real option
+ * rather than a bullet point.
+ */
+export interface ProviderAdapter {
+  readonly id: string;
+  complete(messages: Message[], opts: CompletionOptions): Promise<Completion>;
+}
+
+export class ProviderError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'timeout' | 'network' | 'auth' | 'rate_limit' | 'bad_response'
+  ) {
+    super(message);
+    this.name = 'ProviderError';
+  }
+}
