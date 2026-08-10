@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Enforces the one architectural promise nothing else would notice breaking:
+      # src/core must never import `vscode`, or the future sidecar extraction becomes a rewrite.
+      - name: Core boundary + lint
+        run: npm run lint
+
+      - name: Unit, replay and contract tests
+        run: npm test
+
+      - name: Bundle
+        run: npm run build
+
+# Deliberately not here:
+#   - model conformance (costs money, nondeterministic) — manually triggered, see
+#     docs/engineering-plan.md §3.4
+#   - Marketplace publish — tag-triggered only, never on a PR

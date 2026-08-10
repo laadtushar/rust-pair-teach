@@ -1,0 +1,6 @@
+{"at":0,"type":"edit","uri":"file:///p/src/lib.rs","text":"fn tally(items: &mut Vec<i32>) {\n    let first = &items[0];\n    items.push(*first);\n}\n"}
+{"at":2000,"type":"diagnostics","uri":"file:///p/src/lib.rs","diagnostics":[{"code":"E0502","message":"cannot borrow `*items` as mutable because it is also borrowed as immutable","startLine":2,"endLine":2}]}
+{"at":6000,"type":"edit","uri":"file:///p/src/lib.rs","text":"fn tally(items: &mut Vec<i32>) {\n    let first = &items[0];\n    items.push(*first);\n    // why?\n}\n"}
+{"at":12000,"type":"edit","uri":"file:///p/src/lib.rs","text":"fn tally(items: &mut Vec<i32>) {\n    let first = &items[0];\n    items.push(*first);\n}\n"}
+{"at":400000,"type":"edit","uri":"file:///p/src/lib.rs","text":"fn tally(items: &mut Vec<i32>) {\n    let first = items[0];\n    items.push(first);\n}\n"}
+{"at":401000,"type":"diagnostics","uri":"file:///p/src/lib.rs","diagnostics":[]}

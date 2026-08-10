@@ -1,0 +1,4 @@
+{"at":0,"type":"edit","uri":"file:///p/src/main.rs","text":"fn main() {\n    let s = String::from(\"hi\");\n    take(s);\n    println!(\"{}\", s);\n}\n"}
+{"at":1000,"type":"edit","uri":"file:///p/src/main.rs","text":"fn main() {\n    let s = String::from(\"hi\");\n    take(s);\n    println!(\"{}\", s);\n}\n\nfn take(_s: String) {}\n"}
+{"at":2000,"type":"diagnostics","uri":"file:///p/src/main.rs","diagnostics":[{"code":"E0382","message":"borrow of moved value: `s`","startLine":3,"endLine":3}]}
+{"at":2400000,"type":"diagnostics","uri":"file:///p/src/main.rs","diagnostics":[{"code":"E0382","message":"borrow of moved value: `s`","startLine":3,"endLine":3}]}

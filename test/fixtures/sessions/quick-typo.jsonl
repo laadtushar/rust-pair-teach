@@ -1,0 +1,5 @@
+{"at":0,"type":"edit","uri":"file:///p/src/main.rs","text":"fn main() {\n    let x = 5;\n    println!(\"{}\", x);\n}\n"}
+{"at":1000,"type":"diagnostics","uri":"file:///p/src/main.rs","diagnostics":[{"code":"E0425","message":"cannot find value `y` in this scope","startLine":2,"endLine":2}]}
+{"at":2500,"type":"edit","uri":"file:///p/src/main.rs","text":"fn main() {\n    let x = 5;\n    println!(\"{}\", y);\n}\n"}
+{"at":4000,"type":"edit","uri":"file:///p/src/main.rs","text":"fn main() {\n    let x = 5;\n    println!(\"{}\", x);\n}\n"}
+{"at":5000,"type":"diagnostics","uri":"file:///p/src/main.rs","diagnostics":[]}

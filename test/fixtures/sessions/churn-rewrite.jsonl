@@ -1,0 +1,5 @@
+{"at":0,"type":"edit","uri":"file:///p/src/parse.rs","text":"fn parse(s: &str) -> u32 {\n    s.parse().unwrap()\n}\n"}
+{"at":10000,"type":"edit","uri":"file:///p/src/parse.rs","text":"fn parse(s: &str) -> u32 {\n    s.trim().parse().unwrap()\n}\n"}
+{"at":20000,"type":"edit","uri":"file:///p/src/parse.rs","text":"fn parse(s: &str) -> u32 {\n    s.trim().parse::<u32>().unwrap()\n}\n"}
+{"at":30000,"type":"edit","uri":"file:///p/src/parse.rs","text":"fn parse(s: &str) -> u32 {\n    s.parse::<u32>().expect(\"number\")\n}\n"}
+{"at":40000,"type":"edit","uri":"file:///p/src/parse.rs","text":"fn parse(s: &str) -> u32 {\n    s.trim().parse::<u32>().expect(\"number\")\n}\n"}
