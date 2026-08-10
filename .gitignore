@@ -1,0 +1,26 @@
+# Node / VS Code extension
+node_modules/
+out/
+dist/
+*.vsix
+.vscode-test/
+
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+
+# Local learner data (never commit)
+learner-model.json
+*.local.json
