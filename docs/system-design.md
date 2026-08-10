@@ -271,7 +271,7 @@ Reliability priorities in order: (1) never degrade the editing experience, (2) n
 - Replace heuristic churn detection with tree-sitter-based region tracking once heuristics prove directionally right.
 - Concept table licensing conversation with the Brown Cognitive Engineering Lab before the pedagogy layer deepens.
 - Chapter registry maturity: checksums → signing → community submission review, only as pack volume demands.
-- Multi-language expansion (the concept-table + detector architecture generalizes; Rust stays the wedge).
+- Multi-language expansion (the concept-table + detector architecture generalizes; Rust stays the wedge). Seams specified in [language-extensibility.md](language-extensibility.md) — four of them touch *persisted* formats (diagnostic signatures, namespaced concept ids, the check vocabulary, cache keys) and so must land in v1, while the `LanguageProvider` interface itself deliberately waits for a real second language.
 - If JetBrains or GitHub ship ambient tutoring, collapse scope to the deepest borrow-checker teacher and evaluate partnership over competition.
 
 ## 7. Build order (maps to the research's Stage 1)

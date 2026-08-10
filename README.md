@@ -95,6 +95,7 @@ The full diagram, data model, prompting contract, and heuristics live in
 |---|---|
 | [`docs/system-design.md`](docs/system-design.md) | Requirements, architecture, data model, prompting contract, trade-off analysis |
 | [`docs/market-research.md`](docs/market-research.md) | Competitive landscape, market signals, gap analysis, staged recommendations |
+| [`docs/language-extensibility.md`](docs/language-extensibility.md) | Which seams keep a second language additive, and which to actually build in v1 |
 | [`docs/handout.md`](docs/handout.md) | Condensed research summary + design in a single handout |
 
 ## Open questions
