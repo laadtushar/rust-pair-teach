@@ -1,0 +1,6 @@
+id = "rust-borrow-basics"
+language = "rust"
+version = "0.1.0"
+schemaVersion = 1
+title = "The borrow checker, from the ground up"
+prerequisites = []
