@@ -1,3 +1,5 @@
+import { appendFile, mkdir } from 'node:fs/promises';
+
 import * as vscode from 'vscode';
 
 import { defaultConfig, type DetectorConfig } from '../core/config.js';
@@ -31,21 +33,30 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(output);
 
   const pending: string[] = [];
-  const flush = async (): Promise<void> => {
-    if (pending.length === 0) return;
+
+  /**
+   * Append pending decisions to the log.
+   *
+   * Two things this must not do, both learned the hard way. It must not read-modify-write the whole
+   * file, because a long session turns that into quadratic work on every tick. And it must not run
+   * concurrently with itself: the tick loop fires this without awaiting, so two overlapping flushes
+   * would both read the pre-write file and the first one's lines would vanish. Hence a genuine
+   * append plus a serializing chain.
+   */
+  let flushChain: Promise<void> = Promise.resolve();
+  const flush = (): Promise<void> => {
+    if (pending.length === 0) return flushChain;
     const chunk = pending.splice(0, pending.length).join('\n') + '\n';
-    await vscode.workspace.fs.createDirectory(context.globalStorageUri);
-    let existing: Uint8Array = new Uint8Array();
-    try {
-      existing = await vscode.workspace.fs.readFile(logUri);
-    } catch {
-      // First write — no log yet.
-    }
-    const encoded = new TextEncoder().encode(chunk);
-    const merged = new Uint8Array(existing.length + encoded.length);
-    merged.set(existing, 0);
-    merged.set(encoded, existing.length);
-    await vscode.workspace.fs.writeFile(logUri, merged);
+    flushChain = flushChain
+      .then(async () => {
+        await mkdir(context.globalStorageUri.fsPath, { recursive: true });
+        await appendFile(logUri.fsPath, chunk, 'utf8');
+      })
+      .catch((err: unknown) => {
+        // Never let logging break the editing experience (N4).
+        output.appendLine(`[log] write failed: ${String(err)}`);
+      });
+    return flushChain;
   };
 
   context.subscriptions.push(

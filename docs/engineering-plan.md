@@ -188,6 +188,12 @@ of learners generates no evidence.
 Privacy constraints are the same as the prompt path: local by default, explicit export, never code
 contents — only signatures, scores, and counts.
 
+One caveat that Phase 1 makes concrete: the candidate log records absolute file URIs, and
+pattern-kind signatures embed a normalized diagnostic message. Identifiers and literals are stripped
+by `normalizeMessage`, so code does not leak wholesale — but project structure does. Since Phase 1
+actively invites sharing the log for threshold tuning, say so plainly in the docs before asking
+anyone to send one.
+
 ## 7. Risks, and the engineering response to each
 
 | Risk | Response |
