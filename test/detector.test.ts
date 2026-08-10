@@ -132,3 +132,49 @@ describe('MomentDetector', () => {
     expect(decisions[0]?.signature).toBeUndefined();
   });
 });
+
+describe('MomentDetector cleared reporting', () => {
+  it('reports an unaided fix when a diagnostic clears with no nudge shown', () => {
+    // Nothing happened on screen, which is exactly why this has to be reported explicitly.
+    const cleared: Array<{ value: string; wasTaught: boolean }> = [];
+    const es = new EditStream(defaultConfig);
+    const d = new MomentDetector({
+      config: defaultConfig,
+      editStream: es,
+      onCleared: (c) => cleared.push({ value: c.signature.value, wasTaught: c.wasTaught }),
+    });
+
+    d.onDiagnostics(URI, [obs('E0382')], 0);
+    d.onDiagnostics(URI, [], 9_000);
+    expect(cleared).toEqual([{ value: 'E0382', wasTaught: false }]);
+  });
+
+  it('marks a cleared diagnostic as taught when it had already fired', () => {
+    const cleared: boolean[] = [];
+    const es = new EditStream(defaultConfig);
+    const d = new MomentDetector({
+      config: defaultConfig,
+      editStream: es,
+      onCleared: (c) => cleared.push(c.wasTaught),
+    });
+
+    d.onDiagnostics(URI, [obs('E0382')], 0);
+    expect(d.tick(30_000)[0]?.fired).toBe(true);
+    d.onDiagnostics(URI, [], 40_000);
+    expect(cleared).toEqual([true]);
+  });
+
+  it('preserves how long the struggle had been running', () => {
+    let firstSeen = -1;
+    const es = new EditStream(defaultConfig);
+    const d = new MomentDetector({
+      config: defaultConfig,
+      editStream: es,
+      onCleared: (c) => (firstSeen = c.firstSeenAt),
+    });
+
+    d.onDiagnostics(URI, [obs('E0382')], 5_000);
+    d.onDiagnostics(URI, [], 65_000);
+    expect(firstSeen).toBe(5_000);
+  });
+});

@@ -25,6 +25,14 @@
       {
         "command": "rustPairTeacher.toggleAmbient",
         "title": "Rust Pair Teacher: Toggle ambient watching"
+      },
+      {
+        "command": "rustPairTeacher.teachMe",
+        "title": "Rust Pair Teacher: Explain what I am stuck on"
+      },
+      {
+        "command": "rustPairTeacher.setApiKey",
+        "title": "Rust Pair Teacher: Set API key"
       }
     ],
     "configuration": {
@@ -44,8 +52,36 @@
           "type": "number",
           "default": 20000,
           "description": "How long a diagnostic must persist before it is considered a struggle rather than a typo."
+        },
+        "rustPairTeacher.baseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "OpenAI-compatible endpoint. Leave empty to teach from the built-in material only.\n\n- OpenRouter: `https://openrouter.ai/api/v1`\n- Ollama (local, free, nothing leaves your machine): `http://localhost:11434/v1`"
+        },
+        "rustPairTeacher.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model id to use for hints. Levels 1-2 work on small local models; level 3 worked examples benefit from a stronger one."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rustPairTeacher",
+          "title": "Rust Pair Teacher",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rustPairTeacher": [
+        {
+          "type": "webview",
+          "id": "rustPairTeacher.lesson",
+          "name": "Lesson"
+        }
+      ]
     }
   },
   "scripts": {

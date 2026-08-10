@@ -5,44 +5,91 @@ import * as vscode from 'vscode';
 import { defaultConfig, type DetectorConfig } from '../core/config.js';
 import { MomentDetector } from '../core/detector.js';
 import { EditStream } from '../core/editStream.js';
+import { LessonEngine } from '../core/lesson/engine.js';
+import { LearnerStore } from '../core/learner/store.js';
+import { loadPackFromDisk } from '../core/pack/loadFromDisk.js';
+import { indexBySignature } from '../core/pack/schema.js';
+import type { ConceptEntry } from '../core/pack/types.js';
+import { OpenAiCompatibleProvider } from '../core/provider/openaiCompatible.js';
+import type { ProviderAdapter } from '../core/provider/types.js';
 import { describeDecision, formatDecision } from '../core/log.js';
 import { toSignature } from '../core/signature.js';
+import { TutorSession } from '../core/session.js';
 import type { DiagnosticObservation } from '../core/types.js';
+import { lessonView } from '../core/viewModel.js';
+import { TutorSidebar, type SidebarAction } from './sidebar.js';
 
 const LANGUAGE = 'rust';
 const TICK_MS = 1_000;
 
 /**
- * The VS Code adapter — the only file in the project allowed to import `vscode`.
+ * The VS Code adapter — the only place in the project that imports `vscode`.
  *
- * It does no thinking. It translates editor events into core events, runs the clock, and writes the
- * decisions out. Everything that constitutes a judgement lives in `src/core`, which is what makes
- * the eventual Neovim/Zed sidecar a port of this file rather than a rewrite of the product.
+ * It translates editor events into core calls and renders what core decides. Every judgement about
+ * when to speak, what to teach, and how far up the ladder to go lives in `src/core`, which is what
+ * keeps the eventual Neovim/Zed sidecar a port of this file rather than a rewrite of the product.
  */
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  const output = vscode.window.createOutputChannel('Rust Pair Teacher');
+  context.subscriptions.push(output);
+
   const config = readConfig();
   const editStream = new EditStream(config);
+
+  const store = new LearnerStore(context.globalStorageUri.fsPath);
+  let model = await store.load(Date.now());
+
+  let conceptIndex = new Map<string, ConceptEntry>();
+  try {
+    const pack = await loadPackFromDisk(
+      vscode.Uri.joinPath(context.extensionUri, 'packs', 'rust-borrow-basics').fsPath
+    );
+    conceptIndex = indexBySignature(pack);
+    output.appendLine(`[packs] loaded ${pack.meta.id} with ${String(pack.concepts.length)} concepts`);
+  } catch (err) {
+    // A broken pack must not take the extension down — detection and logging still have value.
+    output.appendLine(`[packs] failed to load: ${String(err)}`);
+  }
+
+  const engine = new LessonEngine({
+    ...(await providerFromSettings(output, context.secrets)),
+    onDegraded: (reason) => output.appendLine(`[lesson] offline hint — ${reason}`),
+  });
+
+  const session = new TutorSession({
+    engine,
+    conceptIndex,
+    model,
+    onModelChanged: (m) => {
+      model = m;
+      void store.save(m).catch((err: unknown) => {
+        output.appendLine(`[learner] save failed: ${String(err)}`);
+      });
+    },
+  });
+
+  const sidebar = new TutorSidebar(context.extensionUri, (action) => {
+    void handleAction(action);
+  });
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(TutorSidebar.viewType, sidebar)
+  );
+
   const detector = new MomentDetector({
     config,
     editStream,
     ambient: vscode.workspace.getConfiguration('rustPairTeacher').get('ambient', true),
+    onCleared: (cleared, now) => {
+      // Solved with no help at all — the signal a struggle-only tutor never sees.
+      if (!cleared.wasTaught) {
+        session.noteResolvedUnaided(cleared.signature, cleared.firstSeenAt, now);
+      }
+    },
   });
 
+  // ---- candidate log -------------------------------------------------------
   const logUri = vscode.Uri.joinPath(context.globalStorageUri, 'candidates.jsonl');
-  const output = vscode.window.createOutputChannel('Rust Pair Teacher');
-  context.subscriptions.push(output);
-
   const pending: string[] = [];
-
-  /**
-   * Append pending decisions to the log.
-   *
-   * Two things this must not do, both learned the hard way. It must not read-modify-write the whole
-   * file, because a long session turns that into quadratic work on every tick. And it must not run
-   * concurrently with itself: the tick loop fires this without awaiting, so two overlapping flushes
-   * would both read the pre-write file and the first one's lines would vanish. Hence a genuine
-   * append plus a serializing chain.
-   */
   let flushChain: Promise<void> = Promise.resolve();
   const flush = (): Promise<void> => {
     if (pending.length === 0) return flushChain;
@@ -52,27 +99,20 @@ export function activate(context: vscode.ExtensionContext): void {
         await mkdir(context.globalStorageUri.fsPath, { recursive: true });
         await appendFile(logUri.fsPath, chunk, 'utf8');
       })
-      .catch((err: unknown) => {
-        // Never let logging break the editing experience (N4).
-        output.appendLine(`[log] write failed: ${String(err)}`);
-      });
+      .catch((err: unknown) => output.appendLine(`[log] write failed: ${String(err)}`));
     return flushChain;
   };
 
+  // ---- editor wiring -------------------------------------------------------
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.languageId !== LANGUAGE) return;
       editStream.onEdit(e.document.uri.toString(), e.document.getText(), Date.now());
-    })
-  );
-
-  context.subscriptions.push(
+    }),
     vscode.languages.onDidChangeDiagnostics((e) => {
       const now = Date.now();
       for (const uri of e.uris) {
-        const doc = vscode.workspace.textDocuments.find(
-          (d) => d.uri.toString() === uri.toString()
-        );
+        const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
         if (doc && doc.languageId !== LANGUAGE) continue;
         detector.onDiagnostics(uri.toString(), readDiagnostics(uri), now);
       }
@@ -80,32 +120,132 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const timer = setInterval(() => {
-    const decisions = detector.tick(Date.now());
-    for (const d of decisions) {
-      pending.push(formatDecision(d));
-      output.appendLine(describeDecision(d));
+    const now = Date.now();
+    for (const decision of detector.tick(now)) {
+      pending.push(formatDecision(decision));
+      output.appendLine(describeDecision(decision));
+      if (decision.fired) void teach(decision.uri, decision, now);
     }
     void flush();
   }, TICK_MS);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
 
+  // ---- actions -------------------------------------------------------------
+  async function teach(
+    uri: string,
+    decision: Parameters<TutorSession['offer']>[0],
+    now: number,
+    onDemand = false
+  ): Promise<void> {
+    const text = documentText(uri);
+    if (text === null) return;
+
+    const outcome = await session.offer(decision, text, now, { onDemand });
+    if (outcome.kind === 'offered') {
+      sidebar.show(lessonView(outcome.lesson));
+      // A gentle pull, never a modal — the sidebar is the teaching surface, not a popup.
+      await vscode.commands.executeCommand('setContext', 'rustPairTeacher.hasLesson', true);
+    } else {
+      output.appendLine(`[lesson] not offered: ${outcome.reason}`);
+    }
+  }
+
+  async function handleAction(action: SidebarAction): Promise<void> {
+    const now = Date.now();
+    const lesson = session.activeLesson;
+
+    if (action === 'escalate' && lesson) {
+      const text = documentText(lesson.uri);
+      if (text === null) return;
+      await session.escalate(text, now);
+      if (session.activeLesson) sidebar.show(lessonView(session.activeLesson));
+      return;
+    }
+
+    if ((action === 'solved' || action === 'dismissed') && lesson) {
+      session.resolve(action === 'solved' ? 'solved' : 'dismissed', now);
+      sidebar.clear();
+      return;
+    }
+
+    if (action === 'teach_me') {
+      await teachOnDemand(now);
+    }
+  }
+
+  /** On-demand: teach whatever is wrong at the cursor, bypassing every cooldown and fade rule. */
+  async function teachOnDemand(now: number): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== LANGUAGE) {
+      void vscode.window.showInformationMessage('Open a Rust file first.');
+      return;
+    }
+    const uri = editor.document.uri;
+    const line = editor.selection.active.line;
+    const observations = readDiagnostics(uri);
+    const at =
+      observations.find((o) => o.startLine <= line && line <= o.endLine) ?? observations[0];
+
+    if (!at) {
+      void vscode.window.showInformationMessage('Nothing is failing to compile right now.');
+      return;
+    }
+
+    await teach(
+      uri.toString(),
+      {
+        at: now,
+        kind: 'lingering_diagnostic',
+        uri: uri.toString(),
+        signature: at.signature,
+        startLine: at.startLine,
+        fired: true,
+        reason: 'requested by the learner',
+      },
+      now,
+      true
+    );
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('rustPairTeacher.openCandidateLog', async () => {
       await flush();
-      const doc = await vscode.workspace.openTextDocument(logUri);
-      await vscode.window.showTextDocument(doc);
+      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(logUri));
     }),
     vscode.commands.registerCommand('rustPairTeacher.toggleAmbient', () => {
       detector.ambient = !detector.ambient;
-      vscode.window.showInformationMessage(
+      void vscode.window.showInformationMessage(
         `Rust Pair Teacher: ambient watching ${detector.ambient ? 'on' : 'off'}`
+      );
+    }),
+    vscode.commands.registerCommand('rustPairTeacher.teachMe', () => teachOnDemand(Date.now())),
+    vscode.commands.registerCommand('rustPairTeacher.setApiKey', async () => {
+      const key = await vscode.window.showInputBox({
+        prompt: 'API key for your chosen provider. Stored in the OS keychain, never in settings.',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (key === undefined) return;
+      if (key.trim() === '') {
+        await context.secrets.delete(API_KEY_SECRET);
+        void vscode.window.showInformationMessage('Rust Pair Teacher: API key cleared.');
+        return;
+      }
+      await context.secrets.store(API_KEY_SECRET, key.trim());
+      void vscode.window.showInformationMessage(
+        'Rust Pair Teacher: API key stored. Reload the window to use it.'
       );
     })
   );
 }
 
 export function deactivate(): void {
-  // The interval is disposed via context.subscriptions.
+  // Everything is disposed through context.subscriptions.
+}
+
+function documentText(uri: string): string | null {
+  const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri);
+  return doc ? doc.getText() : null;
 }
 
 function readConfig(): DetectorConfig {
@@ -114,6 +254,38 @@ function readConfig(): DetectorConfig {
     ...defaultConfig,
     diagnosticAgeMs: settings.get('diagnosticAgeMs', defaultConfig.diagnosticAgeMs),
     idleThresholdMs: settings.get('idleThresholdMs', defaultConfig.idleThresholdMs),
+  };
+}
+
+export const API_KEY_SECRET = 'rustPairTeacher.apiKey';
+
+/**
+ * The key lives in SecretStorage, never in settings.json.
+ *
+ * A settings-based key ends up in a synced profile or a committed workspace file sooner or later,
+ * and this project's audience is specifically people learning — the ones least likely to notice
+ * they just pushed a credential. Local models need no key at all, which stays the recommended path.
+ */
+async function providerFromSettings(
+  output: vscode.OutputChannel,
+  secrets: vscode.SecretStorage
+): Promise<{ provider?: ProviderAdapter; model: string }> {
+  const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+  const baseUrl = settings.get<string>('baseUrl', '').trim();
+  const model = settings.get<string>('model', '').trim();
+
+  if (!baseUrl || !model) {
+    output.appendLine(
+      '[provider] none configured — teaching from the built-in material only. Set rustPairTeacher.baseUrl and .model to personalize.'
+    );
+    return { model: model || 'unconfigured' };
+  }
+
+  const apiKey = (await secrets.get(API_KEY_SECRET))?.trim();
+  output.appendLine(`[provider] ${baseUrl} (${model})${apiKey ? '' : ' — no key stored'}`);
+  return {
+    model,
+    provider: new OpenAiCompatibleProvider({ baseUrl, ...(apiKey ? { apiKey } : {}) }),
   };
 }
 

@@ -20,12 +20,27 @@ function trackKey(uri: string, sig: DiagnosticSignature, startLine: number): str
   return `${uri}|${signatureKey(sig)}|${startLine}`;
 }
 
+export interface ClearedDiagnostic {
+  signature: DiagnosticSignature;
+  firstSeenAt: number;
+  /** Whether the learner was ever nudged about this one. */
+  wasTaught: boolean;
+}
+
 export interface DetectorOptions {
   config: DetectorConfig;
   editStream: EditStream;
   /** Signatures this learner has met before. Backed by the learner model from Phase 3 on. */
   seenSignatures?: Set<string>;
   ambient?: boolean;
+  /**
+   * A diagnostic went away.
+   *
+   * Reported because the *absence* is the signal: a known-hard error cleared with `wasTaught:
+   * false` is someone solving it unaided, which is the strongest evidence of learning the system
+   * ever gets — and the easiest to never notice, since nothing happened on screen.
+   */
+  onCleared?: (cleared: ClearedDiagnostic, now: number) => void;
 }
 
 /**
@@ -43,6 +58,7 @@ export class MomentDetector {
   private readonly config: DetectorConfig;
   private readonly editStream: EditStream;
   private readonly seen: Set<string>;
+  private readonly onCleared: DetectorOptions['onCleared'];
 
   private tracked = new Map<string, TrackedDiagnostic>();
   private firedFor = new Set<string>();
@@ -56,6 +72,7 @@ export class MomentDetector {
     this.editStream = opts.editStream;
     this.seen = opts.seenSignatures ?? new Set();
     this.ambient = opts.ambient ?? true;
+    this.onCleared = opts.onCleared;
   }
 
   /**
@@ -83,7 +100,11 @@ export class MomentDetector {
     for (const [key, t] of this.tracked) {
       if (t.uri === uri && !live.has(key)) {
         this.tracked.delete(key);
-        this.firedFor.delete(key);
+        const wasTaught = this.firedFor.delete(key);
+        this.onCleared?.(
+          { signature: t.signature, firstSeenAt: t.firstSeenAt, wasTaught },
+          now
+        );
       }
     }
   }
