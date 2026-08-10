@@ -11,6 +11,7 @@ import { loadPackFromDisk } from '../core/pack/loadFromDisk.js';
 import { indexBySignature } from '../core/pack/schema.js';
 import type { ConceptEntry } from '../core/pack/types.js';
 import { OpenAiCompatibleProvider } from '../core/provider/openaiCompatible.js';
+import { diagnoseCredential, PRESETS, testConnection } from '../core/provider/setup.js';
 import type { ProviderAdapter } from '../core/provider/types.js';
 import { describeDecision, formatDecision } from '../core/log.js';
 import { toSignature } from '../core/signature.js';
@@ -250,6 +251,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       await vscode.window.showTextDocument(doc);
     }),
+    vscode.commands.registerCommand('rustPairTeacher.setupModel', async () => {
+      const picked = await vscode.window.showQuickPick(
+        PRESETS.map((p) => ({ label: p.label, detail: p.note, preset: p })),
+        { title: 'Where should hints come from?', ignoreFocusOut: true }
+      );
+      if (!picked) return;
+
+      const { preset } = picked;
+      const chosenModel =
+        (await vscode.window.showInputBox({
+          title: 'Model id',
+          value: preset.suggestedModel,
+          ignoreFocusOut: true,
+        })) ?? '';
+      if (chosenModel.trim() === '') return;
+
+      const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+      await settings.update('baseUrl', preset.baseUrl, vscode.ConfigurationTarget.Global);
+      await settings.update('model', chosenModel.trim(), vscode.ConfigurationTarget.Global);
+
+      if (preset.needsKey) {
+        const key = await vscode.window.showInputBox({
+          title: `API key for ${preset.label}`,
+          prompt: 'Stored in the OS keychain. A ChatGPT or Claude subscription is not an API key.',
+          password: true,
+          ignoreFocusOut: true,
+        });
+        if (key && key.trim() !== '') await context.secrets.store(API_KEY_SECRET, key.trim());
+      }
+
+      const key = (await context.secrets.get(API_KEY_SECRET))?.trim();
+      const bad = diagnoseCredential(preset.baseUrl, key);
+      if (bad) {
+        void vscode.window.showErrorMessage(bad.message);
+        return;
+      }
+
+      // Prove it works now, rather than letting the learner find out mid-struggle.
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Testing the connection…' },
+        () =>
+          testConnection(
+            new OpenAiCompatibleProvider({ baseUrl: preset.baseUrl, ...(key ? { apiKey: key } : {}) }),
+            chosenModel.trim()
+          )
+      );
+
+      output.appendLine(`[provider] connection test: ${result.message}`);
+      if (result.ok) {
+        void vscode.window.showInformationMessage(
+          `${result.message} Reload the window to start using it.`
+        );
+      } else {
+        void vscode.window.showErrorMessage(result.message);
+      }
+    }),
     vscode.commands.registerCommand('rustPairTeacher.setApiKey', async () => {
       const key = await vscode.window.showInputBox({
         prompt: 'API key for your chosen provider. Stored in the OS keychain, never in settings.',
@@ -313,6 +370,18 @@ async function providerFromSettings(
   }
 
   const apiKey = (await secrets.get(API_KEY_SECRET))?.trim();
+
+  // Say so now, plainly, rather than letting it surface as a bare 401 mid-struggle.
+  const problem = diagnoseCredential(baseUrl, apiKey);
+  if (problem) {
+    output.appendLine(`[provider] ${problem.message}`);
+    void vscode.window
+      .showWarningMessage(problem.message, 'Set up a model')
+      .then((choice) => {
+        if (choice) void vscode.commands.executeCommand('rustPairTeacher.setupModel');
+      });
+  }
+
   output.appendLine(`[provider] ${baseUrl} (${model})${apiKey ? '' : ' — no key stored'}`);
   return {
     model,

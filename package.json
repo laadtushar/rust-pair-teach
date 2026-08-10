@@ -19,6 +19,10 @@
   "contributes": {
     "commands": [
       {
+        "command": "rustPairTeacher.setupModel",
+        "title": "Rust Pair Teacher: Set up a teaching model"
+      },
+      {
         "command": "rustPairTeacher.openCandidateLog",
         "title": "Rust Pair Teacher: Open candidate log"
       },
@@ -60,7 +64,7 @@
         "rustPairTeacher.baseUrl": {
           "type": "string",
           "default": "",
-          "markdownDescription": "OpenAI-compatible endpoint. Leave empty to teach from the built-in material only.\n\n- OpenRouter: `https://openrouter.ai/api/v1`\n- Ollama (local, free, nothing leaves your machine): `http://localhost:11434/v1`"
+          "markdownDescription": "OpenAI-compatible endpoint. Leave empty to teach from the built-in material only.\n\n- **Ollama** (local, free, nothing leaves your machine): `http://localhost:11434/v1`\n- **OpenAI API**: `https://api.openai.com/v1` — billed separately from any ChatGPT subscription\n- **OpenRouter**: `https://openrouter.ai/api/v1`\n\nA ChatGPT Plus/Pro or Claude Pro/Max subscription is **not** API access and cannot be used here. Run *Set up a teaching model* to configure this interactively."
         },
         "rustPairTeacher.model": {
           "type": "string",

@@ -31,6 +31,19 @@ The first build you can use. Open a Rust file, get stuck, and the sidebar asks y
 - If a model tries to hand you the answer at hint 1 or 2, that answer is discarded and you get a
   question instead. This now also holds when the answer arrives without code fences.
 
+- **Set up a teaching model** walks you through the options, then makes one real call to prove the
+  connection works — rather than letting you discover a bad key later, mid-struggle.
+
+**About ChatGPT and Claude subscriptions**
+
+They cannot be used here, and this build now says so clearly instead of failing with a bare 401.
+A ChatGPT Plus/Pro or Claude Pro/Max subscription pays for those chat apps; API calls are billed
+separately, with their own key and balance. Pointing the extension at `chatgpt.com`, or pasting a
+browser session token, is detected on the spot and explained.
+
+If you would rather not pay anything: Ollama is free, local, needs no key, and nothing leaves your
+machine.
+
 **Known limits**
 
 Still guesses, not measurements: how long an error must linger, and how idle you must be, before it
