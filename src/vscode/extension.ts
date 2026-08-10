@@ -14,6 +14,7 @@ import { OpenAiCompatibleProvider } from '../core/provider/openaiCompatible.js';
 import type { ProviderAdapter } from '../core/provider/types.js';
 import { describeDecision, formatDecision } from '../core/log.js';
 import { toSignature } from '../core/signature.js';
+import { interpret, Telemetry } from '../core/telemetry.js';
 import { TutorSession } from '../core/session.js';
 import type { DiagnosticObservation } from '../core/types.js';
 import { lessonView } from '../core/viewModel.js';
@@ -35,6 +36,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const config = readConfig();
   const editStream = new EditStream(config);
+
+  const telemetry = new Telemetry(
+    vscode.workspace.getConfiguration('rustPairTeacher').get('telemetry', false),
+    new Date().toISOString()
+  );
 
   const store = new LearnerStore(context.globalStorageUri.fsPath);
   let model = await store.load(Date.now());
@@ -124,7 +130,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const decision of detector.tick(now)) {
       pending.push(formatDecision(decision));
       output.appendLine(describeDecision(decision));
-      if (decision.fired) void teach(decision.uri, decision, now);
+      if (decision.fired) {
+        telemetry.momentFired();
+        void teach(decision.uri, decision, now);
+      } else if (decision.suppressedBy) {
+        telemetry.momentSuppressed(decision.suppressedBy);
+      }
     }
     void flush();
   }, TICK_MS);
@@ -142,6 +153,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const outcome = await session.offer(decision, text, now, { onDemand });
     if (outcome.kind === 'offered') {
+      const shown = outcome.lesson.hints[outcome.lesson.hints.length - 1]!;
+      telemetry.hintShown(shown.level, outcome.lesson.concept.id, shown.offline);
       sidebar.show(lessonView(outcome.lesson));
       // A gentle pull, never a modal — the sidebar is the teaching surface, not a popup.
       await vscode.commands.executeCommand('setContext', 'rustPairTeacher.hasLesson', true);
@@ -157,12 +170,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (action === 'escalate' && lesson) {
       const text = documentText(lesson.uri);
       if (text === null) return;
-      await session.escalate(text, now);
+      const next = await session.escalate(text, now);
+      if (next) telemetry.hintShown(next.level, lesson.concept.id, next.offline);
       if (session.activeLesson) sidebar.show(lessonView(session.activeLesson));
       return;
     }
 
     if ((action === 'solved' || action === 'dismissed') && lesson) {
+      telemetry.resolved(action === 'solved' ? `self_level_${String(lesson.level)}` as never : 'abandoned');
       session.resolve(action === 'solved' ? 'solved' : 'dismissed', now);
       sidebar.clear();
       return;
@@ -175,6 +190,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   /** On-demand: teach whatever is wrong at the cursor, bypassing every cooldown and fade rule. */
   async function teachOnDemand(now: number): Promise<void> {
+    telemetry.onDemand();
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== LANGUAGE) {
       void vscode.window.showInformationMessage('Open a Rust file first.');
@@ -214,11 +230,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand('rustPairTeacher.toggleAmbient', () => {
       detector.ambient = !detector.ambient;
+      telemetry.ambientToggled(detector.ambient);
       void vscode.window.showInformationMessage(
         `Rust Pair Teacher: ambient watching ${detector.ambient ? 'on' : 'off'}`
       );
     }),
     vscode.commands.registerCommand('rustPairTeacher.teachMe', () => teachOnDemand(Date.now())),
+    vscode.commands.registerCommand('rustPairTeacher.showTelemetry', async () => {
+      if (!telemetry.enabled) {
+        void vscode.window.showInformationMessage(
+          'Telemetry is off. Enable rustPairTeacher.telemetry to collect it — it stays on this machine.'
+        );
+        return;
+      }
+      const snap = telemetry.snapshot();
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'json',
+        content: JSON.stringify({ snapshot: snap, reading: interpret(snap) }, null, 2),
+      });
+      await vscode.window.showTextDocument(doc);
+    }),
     vscode.commands.registerCommand('rustPairTeacher.setApiKey', async () => {
       const key = await vscode.window.showInputBox({
         prompt: 'API key for your chosen provider. Stored in the OS keychain, never in settings.',

@@ -2,7 +2,7 @@
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
   "description": "An editor-native tutor that watches your Rust and teaches with tiered hints instead of writing your code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -33,6 +33,10 @@
       {
         "command": "rustPairTeacher.setApiKey",
         "title": "Rust Pair Teacher: Set API key"
+      },
+      {
+        "command": "rustPairTeacher.showTelemetry",
+        "title": "Rust Pair Teacher: Show my learning telemetry"
       }
     ],
     "configuration": {
@@ -62,6 +66,11 @@
           "type": "string",
           "default": "",
           "description": "Model id to use for hints. Levels 1-2 work on small local models; level 3 worked examples benefit from a stronger one."
+        },
+        "rustPairTeacher.telemetry": {
+          "type": "boolean",
+          "default": false,
+          "description": "Collect local, anonymous counts about how the tutor is working — moments fired, hint levels reached, how often lessons are dismissed. Never leaves your machine, contains no code or file paths, and you can read it with the Show my learning telemetry command."
         }
       }
     },

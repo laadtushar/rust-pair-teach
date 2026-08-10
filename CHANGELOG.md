@@ -3,6 +3,39 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.2.0 — it actually teaches now
+
+The first build you can use. Open a Rust file, get stuck, and the sidebar asks you a question.
+
+**New**
+
+- A **sidebar** that shows the lesson: a question first, then — only if you click — the compiler's
+  complaint retold in terms of your own code, then a worked example on a *different* snippet.
+  Every rung you've seen stays on screen, so you can re-read the question after the explanation.
+- **Teaching content built in**, covering ownership and moves, shared versus mutable borrows, and
+  lifetimes: E0382, E0499, E0502, E0505, E0515, E0597, E0716.
+- **It works with no AI configured at all** — hints come from that built-in material. Add a model
+  and they get personalized to your code instead. Point it at a local Ollama and nothing leaves
+  your machine.
+- **It remembers.** Solve something alone and it notices. Keep struggling and it stays close. Get
+  good at a concept and it deliberately goes quiet on it — first starting further up the ladder,
+  then not interrupting at all. Ask, though, and it always answers.
+- Months later, a concept you have not touched resurfaces for review.
+- **Explain what I'm stuck on** teaches on demand, ignoring every cooldown.
+- **Show my learning telemetry** (off by default) reports how the tutor is doing, including whether
+  its interruptions look helpful or noisy. Local only; no code, no file paths.
+- API keys are stored in your OS keychain via **Set API key**, never in `settings.json`.
+
+**Changed**
+
+- If a model tries to hand you the answer at hint 1 or 2, that answer is discarded and you get a
+  question instead. This now also holds when the answer arrives without code fences.
+
+**Known limits**
+
+Still guesses, not measurements: how long an error must linger, and how idle you must be, before it
+speaks. That is the next thing to fix, and it needs real use rather than more code.
+
 ## 0.1.0 — first tagged build
 
 Not yet usable as a tutor: there is no sidebar, so nothing is shown to you. This release exists so

@@ -6,8 +6,9 @@ An open source, editor-native AI tutor (VS Code extension) that watches free-for
 write it, detects teachable moments, and teaches with tiered hints instead of autocompleting.
 Working name: **BorrowSensei** (placeholder).
 
-> Status: **design stage.** This repository currently holds the market research and system design.
-> No extension code has been written yet. See [Build order](#build-order).
+> Status: **working, unproven.** The extension watches, detects, teaches, and remembers — but the
+> thresholds that decide *when* it speaks are educated guesses, not measured. It has not yet been
+> used by anyone learning Rust for real, which is the next thing that matters.
 
 ## What it does
 
@@ -77,17 +78,39 @@ The full diagram, data model, prompting contract, and heuristics live in
    validated, no executable hooks) so new pedagogy never requires a new extension release.
 6. **Privacy by default.** The learner model stays local; only a two-line summary ever travels.
 
+## Try it
+
+```bash
+npm install
+npm run verify     # typecheck, lint, 147 tests
+npm run build      # bundle
+npm run package    # .vsix you can install
+```
+
+Then press <kbd>F5</kbd> in VS Code to launch an Extension Development Host, open a Rust project,
+and write something that upsets the borrow checker.
+
+**No API key is needed.** With no model configured, hints come from the built-in material — a
+weaker personalization of the same teaching, not a stub. To personalize, set
+`rustPairTeacher.baseUrl` and `rustPairTeacher.model`, then run **Rust Pair Teacher: Set API key**
+(stored in the OS keychain, never in `settings.json`). Pointing `baseUrl` at a local Ollama means
+nothing leaves your machine at all.
+
+Useful commands: **Explain what I'm stuck on** (bypasses every cooldown), **Open candidate log**
+(every decision it made, including the ones to stay quiet), **Show my learning telemetry**.
+
 ## Build order
 
-1. Edit Stream + snapshot/diff.
-2. Diagnostics reader + Moment Detector with logging, no LLM yet — dogfood how the triggers *feel*.
-3. Concept content for the seven core borrow-checker codes (E0382, E0499, E0502, E0505, E0515,
-   E0597, E0716), authored in the chapter-pack format from day one, plus a minimal loader,
-   Lesson Engine, and sidebar.
-4. Learner model + hint-ladder buttons + resolution tracking + "you do it" action cards.
-5. Marketplace listing; recruit 20–50 Rust learners and instrument the two validation questions:
-   do ambient interruptions feel helpful or noisy, and does concept tracking change what people
-   study?
+1. ~~Edit Stream + snapshot/diff.~~
+2. ~~Diagnostics reader + Moment Detector with logging, no LLM yet.~~
+3. ~~Chapter-pack format, concept content for the seven core borrow-checker codes, Lesson Engine,
+   provider adapter, sidebar.~~
+4. ~~Learner model, hint ladder, resolution tracking, scaffold fading.~~
+5. **← here.** Dogfood it. Tune the thresholds against a real candidate log, then recruit 20–50
+   Rust learners and answer the two validation questions: do ambient interruptions feel helpful or
+   noisy, and does concept tracking change what people study?
+6. Guided scaffolding ("you do it" action cards), chapter registry, the rest of the lifecycle
+   catalog in the system design.
 
 ## Documentation
 
@@ -95,13 +118,15 @@ The full diagram, data model, prompting contract, and heuristics live in
 |---|---|
 | [`docs/system-design.md`](docs/system-design.md) | Requirements, architecture, data model, prompting contract, trade-off analysis |
 | [`docs/market-research.md`](docs/market-research.md) | Competitive landscape, market signals, gap analysis, staged recommendations |
+| [`docs/engineering-plan.md`](docs/engineering-plan.md) | Phases, module boundaries, the four testing layers, CI gates, release |
 | [`docs/language-extensibility.md`](docs/language-extensibility.md) | Which seams keep a second language additive, and which to actually build in v1 |
 | [`docs/handout.md`](docs/handout.md) | Condensed research summary + design in a single handout |
 
 ## Open questions
 
 - Interruption budget numbers, cooldown windows, and idle thresholds are placeholders pending
-  dogfooding.
+  dogfooding. This is the biggest open question in the project: everything else is built, and none
+  of it matters if the timing is wrong.
 - JSON vs SQLite cutover point for the learner model.
 - Chapter registry hosting beyond GitHub Releases.
 - Licensing conversation with Brown University's Cognitive Engineering Lab before leaning harder on
