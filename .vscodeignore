@@ -1,0 +1,12 @@
+# The published extension ships the bundle and the packs — nothing else.
+src/**
+test/**
+docs/**
+.github/**
+.claude/**
+node_modules/**
+*.map
+tsconfig.json
+eslint.config.mjs
+.gitignore
+.vscodeignore
