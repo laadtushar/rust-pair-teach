@@ -3,6 +3,38 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.4.0 — it talks to you now
+
+The sidebar is a conversation. The tutor speaks first, keeps talking as you work, and you can type
+back at any point.
+
+**New**
+
+- **A real back-and-forth.** Ask anything — "what does this error mean", "why does Rust do this",
+  "I don't understand step 2" — and get an answer about *your* code, not a generic one.
+- **It speaks first, and keeps noticing.** It greets you when you open the editor, says what you are
+  about to build when you start a lesson, reacts when a step ticks, and points at what the compiler
+  is complaining about when a new error appears. It will not say the same thing twice about the same
+  event.
+- It can see what you can see: the open lesson, which steps are done, the code around your cursor,
+  and the current compiler errors — reassembled every turn, so it is never talking about a stale
+  version of your file.
+- **Shift+Enter** for a newline, **Enter** to send. A half-typed message survives the panel
+  re-rendering.
+- **Lessons** button when you want the checklist view; it is somewhere you go deliberately now, not
+  where you get dumped.
+
+**Still true**
+
+It will not write your code. If it starts pasting something long enough to copy, that gets replaced
+with an offer to talk through any single line of it instead. If you would rather see full examples,
+turn off `rustPairTeacher.strictNoCode`.
+
+**Needs a model**
+
+Conversation requires one — there is no canned version of talking, and pretending otherwise would be
+worse than saying so. Ollama is free and local: run *Set up a teaching model*.
+
 ## 0.3.0 — a course, not just a safety net
 
 You no longer need to already be writing Rust for this to be useful. Open the sidebar and there is a

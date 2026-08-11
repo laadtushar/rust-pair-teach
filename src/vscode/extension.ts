@@ -19,9 +19,12 @@ import { toSignature } from '../core/signature.js';
 import { interpret, Telemetry } from '../core/telemetry.js';
 import { TutorSession } from '../core/session.js';
 import type { DiagnosticObservation } from '../core/types.js';
-import { courseView, lessonView, type CourseMenuView } from '../core/viewModel.js';
+import { lessonView, type CourseMenuView } from '../core/viewModel.js';
 import { Course, emptyProgress, type CourseProgress } from '../core/course.js';
 import type { WorkspaceView } from '../core/action/types.js';
+import { TutorChat } from '../core/chat/tutorChat.js';
+import type { ChatContext } from '../core/chat/types.js';
+import { extractRegion } from '../core/lesson/region.js';
 import { TutorSidebar, type SidebarAction } from './sidebar.js';
 
 const LANGUAGE = 'rust';
@@ -86,6 +89,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onDegraded: (reason) => output.appendLine(`[lesson] offline hint — ${reason}`),
   });
 
+  const providerConfig = await providerFromSettings(output, context.secrets);
+  let chatError: string | null = null;
+  const chat = new TutorChat({
+    ...providerConfig,
+    strictNoCode: vscode.workspace.getConfiguration('rustPairTeacher').get('strictNoCode', true),
+    onChanged: () => refreshSidebar(),
+    onError: (message) => {
+      chatError = message;
+      output.appendLine(`[chat] ${message}`);
+      refreshSidebar();
+    },
+  });
+
   const session = new TutorSession({
     engine,
     conceptIndex,
@@ -106,6 +122,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       refreshSidebar();
     }) ?? { dispose: () => undefined }
   );
+
+  /** Everything the tutor can see when it speaks. Rebuilt per turn, never accumulated. */
+  function chatContext(): ChatContext {
+    const editor = vscode.window.activeTextEditor;
+    const doc = editor?.document.languageId === LANGUAGE ? editor.document : undefined;
+    const state = course?.refresh(workspaceView()) ?? null;
+
+    const errors = doc
+      ? readDiagnostics(doc.uri).slice(0, 3).map((d) => `${d.signature.value}: ${d.message.split('\n')[0]!}`)
+      : [];
+
+    return {
+      ...(state?.lesson.title ? { lessonTitle: state.lesson.title } : {}),
+      ...(state?.lesson.goal ? { lessonGoal: state.lesson.goal } : {}),
+      ...(state
+        ? { steps: state.steps.map((st) => ({ instruction: st.step.instruction, done: st.done })) }
+        : {}),
+      ...(doc ? { fileName: vscode.workspace.asRelativePath(doc.uri) } : {}),
+      // Only the region around the cursor travels, same rule as everywhere else.
+      ...(doc
+        ? { code: extractRegion(doc.getText(), editor?.selection.active.line ?? 0, 60).text }
+        : {}),
+      ...(errors.length ? { errors } : {}),
+    };
+  }
 
   function workspaceView(): WorkspaceView {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
@@ -165,7 +206,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       editStream.onEdit(e.document.uri.toString(), e.document.getText(), Date.now());
     }),
     // Step checkmarks are the teaching device — they have to tick as the learner works.
-    vscode.workspace.onDidSaveTextDocument(() => refreshSidebar()),
+    vscode.workspace.onDidSaveTextDocument(() => {
+      refreshSidebar();
+      void reactToProgress();
+    }),
     vscode.workspace.onDidCreateFiles(() => refreshSidebar()),
     vscode.languages.onDidChangeDiagnostics((e) => {
       const now = Date.now();
@@ -184,7 +228,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       output.appendLine(describeDecision(decision));
       if (decision.fired) {
         telemetry.momentFired();
-        void teach(decision.uri, decision, now);
+        if (chat.configured && decision.signature) {
+          // In chat mode the tutor raises it in conversation rather than replacing the panel.
+          void chat.nudge('new_error', decision.signature.value, chatContext(), now);
+        } else {
+          void teach(decision.uri, decision, now);
+        }
       } else if (decision.suppressedBy) {
         telemetry.momentSuppressed(decision.suppressedBy);
       }
@@ -224,20 +273,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * course shows — never an empty panel. Someone who has written no Rust yet is exactly the person
    * a "nothing to teach right now" screen fails.
    */
-  function refreshSidebar(): void {
-    if (session.activeLesson) {
-      sidebar.show({ kind: 'hint', view: lessonView(session.activeLesson) });
-      return;
-    }
-    if (!course) return;
+  /** True while the learner is browsing the lesson list. */
+  let showingMenu = false;
 
-    const state = course.refresh(workspaceView());
-    if (state && course.state.current) {
-      const hints = state.lesson.steps.map((st) => st.hint);
-      sidebar.show({ kind: 'course', view: courseView(state, hints) });
+  /**
+   * Render whatever the learner should see now.
+   *
+   * Chat is the default surface — a conversation they can talk into at any moment. The lesson list
+   * is a place they visit deliberately, not somewhere they get dumped.
+   */
+  function refreshSidebar(): void {
+    if (showingMenu && course) {
+      sidebar.show({ kind: 'menu', view: menuView() });
       return;
     }
-    sidebar.show({ kind: 'menu', view: menuView() });
+
+    const state = course?.refresh(workspaceView()) ?? null;
+    sidebar.show({
+      kind: 'chat',
+      messages: chat.messages,
+      busy: chat.isBusy,
+      configured: chat.configured,
+      heading: state && course?.state.current ? state.lesson.title : null,
+      subheading:
+        state && course?.state.current
+          ? `Lesson ${String(state.index + 1)} of ${String(state.total)} — ${state.lesson.goal}`
+          : null,
+      error: chatError,
+    });
+  }
+
+  /**
+   * Let the tutor notice progress out loud.
+   *
+   * Noticing is most of what a good teacher does — a step ticking silently is a missed moment.
+   */
+  let lastDoneCount = -1;
+  async function reactToProgress(): Promise<void> {
+    if (!course || !course.state.current) return;
+    const state = course.refresh(workspaceView());
+    if (!state) return;
+
+    const done = state.steps.filter((st) => st.done).length;
+    if (lastDoneCount === -1) {
+      lastDoneCount = done;
+      return;
+    }
+    if (done <= lastDoneCount) {
+      lastDoneCount = done;
+      return;
+    }
+    lastDoneCount = done;
+
+    await chat.nudge(
+      state.ready ? 'lesson_completed' : 'step_completed',
+      `${state.lesson.id}:${String(done)}`,
+      chatContext(),
+      Date.now()
+    );
   }
 
   function menuView(): CourseMenuView {
@@ -300,6 +393,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await teachOnDemand(now);
         return;
 
+      case 'send':
+        chatError = null;
+        showingMenu = false;
+        await chat.say(action.text, chatContext(), now);
+        return;
+
+      case 'reset_chat':
+        chatError = null;
+        chat.reset();
+        return;
+
       case 'start_course': {
         if (!course) return;
         const next = course.nextLesson();
@@ -307,7 +411,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           course.start(next.id, new Date(now).toISOString());
           saveProgress(course.state);
         }
+        showingMenu = false;
+        lastDoneCount = -1;
         refreshSidebar();
+        await chat.nudge('lesson_opened', next?.id ?? 'none', chatContext(), now);
         return;
       }
 
@@ -315,26 +422,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!course || !action.lessonId) return;
         course.start(action.lessonId, new Date(now).toISOString());
         saveProgress(course.state);
+        showingMenu = false;
+        lastDoneCount = -1;
         refreshSidebar();
+        await chat.nudge('lesson_opened', action.lessonId, chatContext(), now);
         return;
       }
 
       case 'complete_lesson': {
         if (!course) return;
         const open = course.state.current;
-        if (open) {
-          saveProgress(course.complete(open));
-          void vscode.window.showInformationMessage(`Lesson complete: ${open}`);
-        }
+        if (open) saveProgress(course.complete(open));
+        lastDoneCount = -1;
         refreshSidebar();
         return;
       }
 
       case 'show_menu': {
-        if (!course) return;
-        saveProgress({ ...course.state, current: null });
-        course.start('', '');
-        sidebar.show({ kind: 'menu', view: menuView() });
+        showingMenu = true;
+        refreshSidebar();
         return;
       }
 
@@ -380,8 +486,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   refreshSidebar();
+  // Speak first. A tutor that waits to be addressed is a search box.
+  void chat.nudge('session_start', 'boot', chatContext(), Date.now());
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('rustPairTeacher.chat', async () => {
+      await vscode.commands.executeCommand('rustPairTeacher.lesson.focus');
+      refreshSidebar();
+    }),
     vscode.commands.registerCommand('rustPairTeacher.startCourse', async () => {
       await vscode.commands.executeCommand('rustPairTeacher.lesson.focus');
       await handleAction({ type: 'start_course' });

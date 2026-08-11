@@ -2,7 +2,7 @@
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
   "description": "An editor-native tutor that watches your Rust and teaches with tiered hints instead of writing your code.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -19,6 +19,10 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "rustPairTeacher.chat",
+        "title": "Rust Pair Teacher: Talk to my tutor"
+      },
       {
         "command": "rustPairTeacher.startCourse",
         "title": "Rust Pair Teacher: Start learning Rust"
@@ -80,6 +84,11 @@
           "type": "boolean",
           "default": false,
           "description": "Collect local, anonymous counts about how the tutor is working — moments fired, hint levels reached, how often lessons are dismissed. Never leaves your machine, contains no code or file paths, and you can read it with the Show my learning telemetry command."
+        },
+        "rustPairTeacher.strictNoCode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stop the tutor pasting a block of code you could copy. Short illustrative snippets still come through. Turn this off if you would rather see full examples."
         }
       }
     },
@@ -97,7 +106,7 @@
         {
           "type": "webview",
           "id": "rustPairTeacher.lesson",
-          "name": "Learn Rust"
+          "name": "Tutor"
         }
       ]
     }

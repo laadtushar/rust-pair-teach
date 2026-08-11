@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import type { ChatMessage } from '../core/chat/types.js';
 import type { CourseMenuView, CourseView, LessonView } from '../core/viewModel.js';
 
 export type SidebarAction =
@@ -11,12 +12,24 @@ export type SidebarAction =
   | { type: 'open_lesson'; lessonId: string }
   | { type: 'complete_lesson' }
   | { type: 'show_menu' }
-  | { type: 'setup_model' };
+  | { type: 'setup_model' }
+  | { type: 'send'; text: string }
+  | { type: 'reset_chat' };
 
 export type SidebarState =
   | { kind: 'menu'; view: CourseMenuView }
   | { kind: 'course'; view: CourseView }
-  | { kind: 'hint'; view: LessonView };
+  | { kind: 'hint'; view: LessonView }
+  | {
+      kind: 'chat';
+      messages: readonly ChatMessage[];
+      busy: boolean;
+      configured: boolean;
+      /** Lesson header, so the learner always knows what they are working on. */
+      heading: string | null;
+      subheading: string | null;
+      error: string | null;
+    };
 
 /**
  * The teaching surface.
@@ -108,6 +121,23 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
   .bar { height: 4px; background: var(--vscode-editorWidget-background); border-radius: 2px;
          overflow: hidden; margin: 10px 0 4px; }
   .bar > div { height: 100%; background: var(--vscode-textLink-foreground); }
+  .chat-head { padding-bottom: 8px; margin-bottom: 8px;
+               border-bottom: 1px solid var(--vscode-widget-border, transparent); }
+  .thread { display: flex; flex-direction: column; gap: 14px; padding-bottom: 12px; }
+  .msg .who { font-size: 0.72em; text-transform: uppercase; letter-spacing: .07em;
+              color: var(--vscode-descriptionForeground); margin-bottom: 3px; }
+  .msg.learner .say { background: var(--vscode-editorWidget-background);
+                      padding: 7px 10px; border-radius: 4px; }
+  .msg .say p { margin: 0 0 8px; }
+  .msg .say p:last-child { margin-bottom: 0; }
+  .typing { color: var(--vscode-descriptionForeground); }
+  .err { color: var(--vscode-errorForeground); font-size: 0.9em; }
+  .composer { position: sticky; bottom: 0; padding-top: 8px;
+              background: var(--vscode-sideBar-background); }
+  textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit;
+             font-size: inherit; padding: 6px 8px; border-radius: 3px;
+             color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+             border: 1px solid var(--vscode-input-border, transparent); }
 </style>
 </head>
 <body>
@@ -118,6 +148,32 @@ ${this.content()}
     el.addEventListener('click', () =>
       api.postMessage({ type: el.dataset.action, lessonId: el.dataset.lesson }));
   }
+
+  const input = document.getElementById('input');
+  const send = document.getElementById('send');
+  if (input && send) {
+    // Restore what was half-typed: the panel re-renders on every message and every file save,
+    // and losing a sentence mid-thought would make the thing unusable.
+    const saved = api.getState() || {};
+    if (saved.draft) input.value = saved.draft;
+    input.addEventListener('input', () => api.setState({ draft: input.value }));
+
+    const submit = () => {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      api.setState({ draft: '' });
+      api.postMessage({ type: 'send', text });
+    };
+    send.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    });
+    input.focus();
+  }
+
+  const thread = document.getElementById('thread');
+  if (thread) thread.scrollIntoView({ block: 'end' });
 </script>
 </body>
 </html>`;
@@ -132,6 +188,8 @@ ${this.content()}
         return this.courseHtml(this.state.view);
       case 'hint':
         return this.hintHtml(this.state.view);
+      case 'chat':
+        return this.chatHtml(this.state);
     }
   }
 
@@ -193,6 +251,37 @@ ${setup}`;
   <button class="secondary" data-action="show_menu">All lessons</button>
 </div>
 ${view.ready ? '' : '<p class="note">Steps tick themselves as you go. You can continue anyway if you have done the work — the checks are hints, not a gate.</p>'}`;
+  }
+
+  private chatHtml(state: Extract<SidebarState, { kind: 'chat' }>): string {
+    const bubbles = state.messages
+      .map(
+        (m) => `<div class="msg ${m.speaker}">
+        <div class="who">${m.speaker === 'tutor' ? 'Tutor' : 'You'}</div>
+        <div class="say">${renderMarkdown(m.text)}</div>
+      </div>`
+      )
+      .join('\n');
+
+    const empty = state.configured
+      ? '<p class="goal">Say hello, or just start writing Rust — I am watching along.</p>'
+      : `<p class="goal">I need a model connected before I can talk. Ollama is free and runs on your machine.</p>
+         <div class="actions"><button data-action="setup_model">Connect a model</button></div>`;
+
+    return `${state.heading ? `<div class="chat-head"><strong>${escapeHtml(state.heading)}</strong>${state.subheading ? `<div class="position">${escapeHtml(state.subheading)}</div>` : ''}</div>` : ''}
+<div class="thread" id="thread">
+  ${state.messages.length === 0 ? empty : bubbles}
+  ${state.busy ? '<div class="msg tutor"><div class="who">Tutor</div><div class="say typing">…</div></div>' : ''}
+  ${state.error ? `<div class="err">${escapeHtml(state.error)}</div>` : ''}
+</div>
+<div class="composer">
+  <textarea id="input" rows="2" placeholder="Ask anything — or tell me what you are trying to do" ${state.configured ? '' : 'disabled'}></textarea>
+  <div class="actions">
+    <button id="send" ${state.configured ? '' : 'disabled'}>Send</button>
+    <button class="secondary" data-action="show_menu">Lessons</button>
+    <button class="secondary" data-action="reset_chat">Clear</button>
+  </div>
+</div>`;
   }
 
   private hintHtml(view: LessonView): string {
