@@ -32,6 +32,9 @@ export class OpenAiCompatibleProvider implements ProviderAdapter {
   async complete(messages: Message[], opts: CompletionOptions): Promise<Completion> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    // Caller-driven cancellation rides the same controller as the timeout.
+    const onExternalAbort = () => controller.abort();
+    opts.signal?.addEventListener('abort', onExternalAbort, { once: true });
 
     try {
       const res = await this.fetchImpl(`${trimSlash(this.config.baseUrl)}/chat/completions`, {
@@ -83,11 +86,13 @@ export class OpenAiCompatibleProvider implements ProviderAdapter {
     } catch (err) {
       if (err instanceof ProviderError) throw err;
       if (err instanceof Error && err.name === 'AbortError') {
+        if (opts.signal?.aborted) throw new ProviderError('cancelled by the learner', 'cancelled');
         throw new ProviderError(`provider timed out after ${opts.timeoutMs}ms`, 'timeout');
       }
       throw new ProviderError(String(err), 'network');
     } finally {
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 }

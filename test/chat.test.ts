@@ -130,7 +130,9 @@ describe('conversation', () => {
     const complete = vi.fn(async () => ({ text: 'ok' }));
     const c = chat({ id: 's', complete });
     await c.nudge('new_error', 'E0502', CTX, 1);
-    await c.nudge('new_error', 'E0382', CTX, 2);
+    // Far enough apart to clear the proactive floor (F2). Two events a millisecond apart are not
+    // a realistic sequence, and the floor deliberately suppresses them.
+    await c.nudge('new_error', 'E0382', CTX, 60_000);
     expect(complete).toHaveBeenCalledTimes(2);
   });
 
@@ -235,5 +237,91 @@ describe('persistence (A4)', () => {
     const c = chat(provider('x'));
     await c.say('hi', CTX, 1);
     expect(c.messages).toHaveLength(2);
+  });
+});
+
+describe('cancellation (B2)', () => {
+  it('aborts an in-flight reply and records nothing', async () => {
+    const errors: string[] = [];
+    let capturedSignal: AbortSignal | undefined;
+    const c = chat(
+      {
+        id: 'slow',
+        complete: (_m, opts) =>
+          new Promise((_resolve, reject) => {
+            capturedSignal = opts.signal;
+            opts.signal?.addEventListener('abort', () => {
+              const e = new Error('aborted');
+              e.name = 'AbortError';
+              reject(e);
+            });
+          }),
+      },
+      { onError: (e) => errors.push(e) }
+    );
+
+    const pending = c.say('a question I regret', CTX, 1);
+    c.cancel();
+    await pending;
+
+    expect(capturedSignal?.aborted).toBe(true);
+    // Only the learner's own message survives; no half-formed tutor reply.
+    expect(c.messages.map((m) => m.speaker)).toEqual(['learner']);
+    // A cancellation is the learner getting what they asked for, not a failure to report.
+    expect(errors).toEqual([]);
+    expect(c.isBusy).toBe(false);
+  });
+
+  it('is harmless when nothing is in flight', () => {
+    expect(() => chat(provider('x')).cancel()).not.toThrow();
+  });
+});
+
+describe('proactive floor (F2)', () => {
+  it('will not speak twice in quick succession, even about different things', async () => {
+    // Alternating events — save, error appears, save, error clears — could otherwise produce a
+    // nudge on every save.
+    const complete = vi.fn(async () => ({ text: 'ok' }));
+    const c = chat({ id: 's', complete }, { minProactiveIntervalMs: 20_000 });
+
+    await c.nudge('new_error', 'E0502', CTX, 0);
+    await c.nudge('step_completed', 'step-1', CTX, 5_000);
+    await c.nudge('new_error', 'E0382', CTX, 10_000);
+
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('speaks again once the floor has passed', async () => {
+    const complete = vi.fn(async () => ({ text: 'ok' }));
+    const c = chat({ id: 's', complete }, { minProactiveIntervalMs: 20_000 });
+
+    await c.nudge('new_error', 'E0502', CTX, 0);
+    await c.nudge('new_error', 'E0382', CTX, 25_000);
+
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it('never throttles what the learner directly asks', async () => {
+    // The floor governs unprompted remarks only. A question always gets an answer.
+    const complete = vi.fn(async () => ({ text: 'ok' }));
+    const c = chat({ id: 's', complete }, { minProactiveIntervalMs: 60_000 });
+
+    await c.nudge('session_start', 'boot', CTX, 0);
+    await c.say('but what about this?', CTX, 1_000);
+    await c.say('and this?', CTX, 2_000);
+
+    expect(complete).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('no workspace open (F3)', () => {
+  it('tells the model there is no project, rather than discussing an imaginary one', () => {
+    const system = buildChatPrompt([], { noWorkspace: true })[0]!.content;
+    expect(system).toMatch(/no folder is open/i);
+    expect(system).toMatch(/cargo new/);
+  });
+
+  it('says nothing about it when a folder is open', () => {
+    expect(buildChatPrompt([], CTX)[0]!.content).not.toMatch(/no folder is open/i);
   });
 });

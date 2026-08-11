@@ -24,10 +24,20 @@ export interface TutorChatOptions {
   onError?: (message: string) => void;
   /** Omit for an ephemeral conversation, as the tests do. */
   store?: ChatStore;
+  /**
+   * Floor between unprompted remarks, whatever the reason (F2).
+   *
+   * The per-event dedupe alone cannot stop alternating events — save, error appears, save, error
+   * clears — from producing a nudge on every save.
+   */
+  minProactiveIntervalMs?: number;
 }
 
 /** Kept small enough to load instantly and large enough to hold a real session. */
 export const MAX_STORED_MESSAGES = 200;
+
+/** Provisional, like every other interval in this project. */
+export const DEFAULT_MIN_PROACTIVE_INTERVAL_MS = 20_000;
 
 /**
  * A conversation with the tutor.
@@ -44,6 +54,8 @@ export class TutorChat {
   private busy = false;
   /** Deduplicates proactive nudges so the tutor does not repeat itself on every tick. */
   private lastProactive: { reason: ProactiveReason; key: string } | null = null;
+  private lastProactiveAt = Number.NEGATIVE_INFINITY;
+  private inFlight: AbortController | null = null;
 
   constructor(private opts: TutorChatOptions) {
     // Reloading the window is something the setup wizard actively tells people to do; losing the
@@ -61,6 +73,11 @@ export class TutorChat {
 
   get configured(): boolean {
     return this.opts.provider !== undefined;
+  }
+
+  /** Abort whatever the tutor is saying. Leaves the history consistent. */
+  cancel(): void {
+    this.inFlight?.abort();
   }
 
   /** Drop the conversation but keep the configuration. */
@@ -95,7 +112,12 @@ export class TutorChat {
   ): Promise<void> {
     if (this.busy) return;
     if (this.lastProactive?.reason === reason && this.lastProactive.key === key) return;
+
+    const interval = this.opts.minProactiveIntervalMs ?? DEFAULT_MIN_PROACTIVE_INTERVAL_MS;
+    if (now - this.lastProactiveAt < interval) return;
+
     this.lastProactive = { reason, key };
+    this.lastProactiveAt = now;
     await this.respond(ctx, now, reason);
   }
 
@@ -112,6 +134,8 @@ export class TutorChat {
     }
 
     this.busy = true;
+    const controller = new AbortController();
+    this.inFlight = controller;
     this.opts.onChanged?.(this.history);
 
     try {
@@ -121,6 +145,7 @@ export class TutorChat {
           model: this.opts.model,
           maxTokens: this.opts.maxTokens ?? 500,
           timeoutMs: this.opts.timeoutMs ?? 30_000,
+          signal: controller.signal,
         }
       );
 
@@ -139,9 +164,11 @@ export class TutorChat {
         });
       }
     } catch (err) {
-      this.opts.onError?.(String(err));
+      // A cancellation is the learner getting what they asked for, not a failure to report.
+      if (!controller.signal.aborted) this.opts.onError?.(String(err));
     } finally {
       this.busy = false;
+      this.inFlight = null;
       this.opts.onChanged?.(this.history);
     }
   }

@@ -28,6 +28,8 @@ export interface ChatContext {
   errors?: string[];
   /** Two-line summary from the learner model. */
   learnerSummary?: string;
+  /** No folder is open, so nothing can be checked and no file can be created (F3). */
+  noWorkspace?: boolean;
 }
 
 /** Why the tutor is about to speak unprompted. */

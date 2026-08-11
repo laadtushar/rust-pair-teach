@@ -44,6 +44,14 @@ const REASON_PROMPTS: Record<ProactiveReason, string> = {
 function describeContext(ctx: ChatContext): string {
   const parts: string[] = [];
 
+  // Without a folder every lesson step reads as incomplete, so say so rather than let the tutor
+  // confidently discuss a project that does not exist.
+  if (ctx.noWorkspace) {
+    parts.push(
+      'IMPORTANT: no folder is open in the editor, so there is no project yet and no step can be checked. Before anything else, walk them through opening a folder and running `cargo new`.'
+    );
+  }
+
   if (ctx.lessonTitle) {
     parts.push(`Current lesson: ${ctx.lessonTitle}${ctx.lessonGoal ? ` — ${ctx.lessonGoal}` : ''}`);
   }

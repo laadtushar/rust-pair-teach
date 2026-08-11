@@ -22,7 +22,7 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 | Chat is invisible to telemetry | No `telemetry.*` call on any chat path |
 | No spend guard exists | Design N2 promises a daily budget; no `budget`/`rateLimit` anywhere in `src/` |
 | No response caching exists | Design §3.5 promises it; no cache in `src/` |
-| No streaming | `openaiCompatible.ts` awaits the whole body |
+| No streaming | `openaiCompatible.ts` awaits the whole body — B4 is now done, so B1 is unblocked |
 | No integration test against real VS Code | `@vscode/test-electron` is not a dependency; no integration test file |
 | Nothing has ever run in real VS Code | Only a stubbed `require()` smoke test |
 
@@ -144,7 +144,7 @@ the product.
 
 ---
 
-### B2 — Cancel an in-flight reply `P1` `S`
+### B2 — Cancel an in-flight reply `P1` `S` — **DONE**
 
 **Why.** `TutorChat.busy` blocks new turns but nothing aborts the request. A learner who asks the
 wrong question waits it out.
@@ -168,7 +168,7 @@ design assumed, and a proactive nudge loop bug could bill unboundedly.
 
 ---
 
-### B4 — Stop re-rendering the whole webview `P1` `M`
+### B4 — Stop re-rendering the whole webview `P1` `M` — **DONE**
 
 **Why.** `TutorSidebar.render` reassigns `webview.html` on every change. Every file save and every
 message rebuilds the DOM, which is why a draft-restore hack exists (`sidebar.ts:157`). It will not
@@ -295,7 +295,7 @@ has never been executed on Windows.
 **Acceptance criteria.** Confirmed on Windows, or a normalisation layer added with tests. Do not
 close this by reasoning alone.
 
-### F2 — Bound the proactive nudge loop `P1` `S`
+### F2 — Bound the proactive nudge loop `P1` `S` — **DONE**
 
 **Why.** `reactToProgress` fires on every save, and `nudge` dedupes only on the immediately previous
 `(reason, key)`. Alternating between two events (save → error appears → save → error clears) could
@@ -305,7 +305,7 @@ possible.
 **Acceptance criteria.** A minimum interval between proactive nudges regardless of reason, reusing
 the interruption budget from `config.ts`. A test drives alternating events and asserts the cap holds.
 
-### F3 — Decide what happens with no workspace open `P1` `S`
+### F3 — Decide what happens with no workspace open `P1` `S` — **DONE**
 
 **Why.** `workspaceView` returns `exists: () => false` when there is no workspace folder, so every
 lesson step reads as incomplete and the tutor may confidently discuss a project that does not exist.

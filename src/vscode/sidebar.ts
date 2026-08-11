@@ -14,7 +14,8 @@ export type SidebarAction =
   | { type: 'show_menu' }
   | { type: 'setup_model' }
   | { type: 'send'; text: string }
-  | { type: 'reset_chat' };
+  | { type: 'reset_chat' }
+  | { type: 'cancel' };
 
 export type SidebarState =
   | { kind: 'menu'; view: CourseMenuView }
@@ -58,6 +59,8 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
     view.webview.onDidReceiveMessage((msg: SidebarAction) => {
       if (msg.type) this.onAction(msg);
     });
+    // The shell is written exactly once. Everything after this is a message.
+    view.webview.html = this.shell();
     this.render();
   }
 
@@ -66,12 +69,29 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
     this.render();
   }
 
+  /**
+   * Push new content without rebuilding the document.
+   *
+   * Reassigning `webview.html` destroys the DOM, which took the composer, its focus, its caret and
+   * whatever was half-typed with it. That was survivable when updates came from a button click; it
+   * is not survivable once replies stream. So the composer lives in the shell and is never
+   * replaced — only the thread's contents change.
+   */
   private render(): void {
-    if (!this.view) return;
-    this.view.webview.html = this.html();
+    if (!this.view || !this.state) return;
+    const chat = this.state.kind === 'chat' ? this.state : null;
+
+    void this.view.webview.postMessage({
+      type: 'render',
+      body: this.content(),
+      showComposer: chat !== null,
+      composerEnabled: chat ? chat.configured && !chat.busy : false,
+      busy: chat?.busy ?? false,
+      scrollToEnd: chat !== null,
+    });
   }
 
-  private html(): string {
+  private shell(): string {
     const nonce = makeNonce();
     const csp = [
       "default-src 'none'",
@@ -123,7 +143,8 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
   .bar > div { height: 100%; background: var(--vscode-textLink-foreground); }
   .chat-head { padding-bottom: 8px; margin-bottom: 8px;
                border-bottom: 1px solid var(--vscode-widget-border, transparent); }
-  .thread { display: flex; flex-direction: column; gap: 14px; padding-bottom: 12px; }
+  .thread { display: flex; flex-direction: column; gap: 14px; padding-bottom: 12px;
+            max-height: 70vh; overflow-y: auto; }
   .msg .who { font-size: 0.72em; text-transform: uppercase; letter-spacing: .07em;
               color: var(--vscode-descriptionForeground); margin-bottom: 3px; }
   .msg.learner .say { background: var(--vscode-editorWidget-background);
@@ -132,8 +153,10 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
   .msg .say p:last-child { margin-bottom: 0; }
   .typing { color: var(--vscode-descriptionForeground); }
   .err { color: var(--vscode-errorForeground); font-size: 0.9em; }
-  .composer { position: sticky; bottom: 0; padding-top: 8px;
+  .composer { position: sticky; bottom: 0; padding: 8px 12px 12px;
               background: var(--vscode-sideBar-background); }
+  #root { padding: 12px 12px 0; }
+  body { padding: 0; }
   textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit;
              font-size: inherit; padding: 6px 8px; border-radius: 3px;
              color: var(--vscode-input-foreground); background: var(--vscode-input-background);
@@ -141,39 +164,60 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
 </style>
 </head>
 <body>
-${this.content()}
+<div id="root"></div>
+<div id="composer" class="composer" hidden>
+  <textarea id="input" rows="2" placeholder="Ask anything — or tell me what you are trying to do"></textarea>
+  <div class="actions">
+    <button id="send">Send</button>
+    <button id="stop" class="secondary" hidden data-action="cancel">Stop</button>
+    <button class="secondary" data-action="show_menu">Lessons</button>
+    <button class="secondary" data-action="reset_chat">Clear</button>
+  </div>
+</div>
 <script nonce="${nonce}">
   const api = acquireVsCodeApi();
-  for (const el of document.querySelectorAll('button[data-action]')) {
-    el.addEventListener('click', () =>
-      api.postMessage({ type: el.dataset.action, lessonId: el.dataset.lesson }));
-  }
-
+  const root = document.getElementById('root');
+  const composer = document.getElementById('composer');
   const input = document.getElementById('input');
   const send = document.getElementById('send');
-  if (input && send) {
-    // Restore what was half-typed: the panel re-renders on every message and every file save,
-    // and losing a sentence mid-thought would make the thing unusable.
-    const saved = api.getState() || {};
-    if (saved.draft) input.value = saved.draft;
-    input.addEventListener('input', () => api.setState({ draft: input.value }));
+  const stop = document.getElementById('stop');
 
-    const submit = () => {
-      const text = input.value.trim();
-      if (!text) return;
-      input.value = '';
-      api.setState({ draft: '' });
-      api.postMessage({ type: 'send', text });
-    };
-    send.addEventListener('click', submit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
-    });
-    input.focus();
-  }
+  // Delegated, so buttons inside freshly-rendered content need no re-binding.
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('button[data-action]');
+    if (!el) return;
+    api.postMessage({ type: el.dataset.action, lessonId: el.dataset.lesson });
+  });
 
-  const thread = document.getElementById('thread');
-  if (thread) thread.scrollIntoView({ block: 'end' });
+  const submit = () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    api.postMessage({ type: 'send', text });
+  };
+  send.addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+  });
+
+  window.addEventListener('message', (event) => {
+    const msg = event.data;
+    if (msg.type !== 'render') return;
+
+    // Only the content region is replaced. The composer element survives, so focus, caret and any
+    // half-typed message survive with it — no state round-trip needed.
+    root.innerHTML = msg.body;
+    composer.hidden = !msg.showComposer;
+    input.disabled = !msg.composerEnabled;
+    send.disabled = !msg.composerEnabled;
+    stop.hidden = !msg.busy;
+
+    if (msg.scrollToEnd) {
+      const thread = document.getElementById('thread');
+      if (thread) thread.scrollTop = thread.scrollHeight;
+    }
+    if (msg.composerEnabled && document.activeElement !== input) input.focus();
+  });
 </script>
 </body>
 </html>`;
@@ -274,14 +318,7 @@ ${view.ready ? '' : '<p class="note">Steps tick themselves as you go. You can co
   ${state.busy ? '<div class="msg tutor"><div class="who">Tutor</div><div class="say typing">…</div></div>' : ''}
   ${state.error ? `<div class="err">${escapeHtml(state.error)}</div>` : ''}
 </div>
-<div class="composer">
-  <textarea id="input" rows="2" placeholder="Ask anything — or tell me what you are trying to do" ${state.configured ? '' : 'disabled'}></textarea>
-  <div class="actions">
-    <button id="send" ${state.configured ? '' : 'disabled'}>Send</button>
-    <button class="secondary" data-action="show_menu">Lessons</button>
-    <button class="secondary" data-action="reset_chat">Clear</button>
-  </div>
-</div>`;
+`;
   }
 
   private hintHtml(view: LessonView): string {

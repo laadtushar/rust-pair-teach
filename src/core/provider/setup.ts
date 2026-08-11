@@ -187,6 +187,8 @@ export function explainProviderError(err: unknown, model: string): string {
       return 'The provider did not respond in time. If this is Ollama, check it is running (`ollama serve`) and the model is pulled (`ollama pull <model>`).';
     case 'bad_response':
       return `The endpoint answered but not in the expected shape. Check that the base URL ends in /v1 and that "${model}" exists on this provider.`;
+    case 'cancelled':
+      return 'Cancelled.';
     case 'network':
       return `Could not reach the provider: ${err.message}. If this is a local model, confirm the port. Otherwise check connectivity or a proxy.`;
   }

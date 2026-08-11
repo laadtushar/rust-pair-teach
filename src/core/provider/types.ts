@@ -4,6 +4,8 @@ export interface CompletionOptions {
   model: string;
   maxTokens: number;
   timeoutMs: number;
+  /** Abort from outside — a learner who asked the wrong question should not have to wait it out. */
+  signal?: AbortSignal;
 }
 
 export interface Completion {
@@ -26,7 +28,7 @@ export interface ProviderAdapter {
 export class ProviderError extends Error {
   constructor(
     message: string,
-    readonly kind: 'timeout' | 'network' | 'auth' | 'rate_limit' | 'bad_response'
+    readonly kind: 'timeout' | 'network' | 'auth' | 'rate_limit' | 'bad_response' | 'cancelled'
   ) {
     super(message);
     this.name = 'ProviderError';

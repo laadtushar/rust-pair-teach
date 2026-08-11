@@ -142,7 +142,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ? readDiagnostics(doc.uri).slice(0, 3).map((d) => `${d.signature.value}: ${d.message.split('\n')[0]!}`)
       : [];
 
+    const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+
     return {
+      ...(hasWorkspace ? {} : { noWorkspace: true }),
       ...(state?.lesson.title ? { lessonTitle: state.lesson.title } : {}),
       ...(state?.lesson.goal ? { lessonGoal: state.lesson.goal } : {}),
       ...(state
@@ -411,6 +414,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       case 'reset_chat':
         chatError = null;
         chat.reset();
+        return;
+
+      case 'cancel':
+        chat.cancel();
         return;
 
       case 'start_course': {
