@@ -2,7 +2,7 @@
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
   "description": "An editor-native tutor that watches your Rust and teaches with tiered hints instead of writing your code.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -89,6 +89,11 @@
           "type": "boolean",
           "default": true,
           "description": "Stop the tutor pasting a block of code you could copy. Short illustrative snippets still come through. Turn this off if you would rather see full examples."
+        },
+        "rustPairTeacher.dailyCallLimit": {
+          "type": "number",
+          "default": 200,
+          "description": "Most model calls the tutor may make in a day. Resets at midnight. The built-in lessons and hints keep working once it is reached."
         }
       }
     },

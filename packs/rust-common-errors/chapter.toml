@@ -1,0 +1,6 @@
+id = "rust-common-errors"
+language = "rust"
+version = "0.1.0"
+schemaVersion = 1
+title = "The errors everyone hits"
+prerequisites = []

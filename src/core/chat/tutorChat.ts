@@ -1,4 +1,5 @@
 import type { ProviderAdapter } from '../provider/types.js';
+import type { SpendGuard } from '../spend.js';
 import { fitChatPrompt, limitCodeInReply, maskIncompleteFence } from './prompt.js';
 import type { ChatContext, ChatMessage, ProactiveReason } from './types.js';
 
@@ -35,6 +36,8 @@ export interface TutorChatOptions {
   minProactiveIntervalMs?: number;
   /** Roughly how large a request may get before older turns are dropped (B5). */
   maxPromptChars?: number;
+  /** Daily call ceiling (B3). Omit to leave the conversation unbounded. */
+  spend?: SpendGuard;
 }
 
 /** Kept small enough to load instantly and large enough to hold a real session. */
@@ -140,6 +143,13 @@ export class TutorChat {
       return;
     }
 
+    const nowIso = new Date(now).toISOString();
+    const budget = this.opts.spend?.check(nowIso);
+    if (budget && !budget.allowed) {
+      this.opts.onError?.(budget.reason ?? 'Daily model budget reached.');
+      return;
+    }
+
     this.busy = true;
     const controller = new AbortController();
     this.inFlight = controller;
@@ -185,6 +195,8 @@ export class TutorChat {
             this.opts.onChanged?.(this.history);
           })
         : await provider.complete(fitted.messages, callOpts);
+
+      this.opts.spend?.record(nowIso, completion.usage);
 
       const reply =
         this.opts.strictNoCode === false

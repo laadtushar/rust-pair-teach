@@ -23,6 +23,7 @@ import { lessonView, type CourseMenuView } from '../core/viewModel.js';
 import { Course, emptyProgress, type CourseProgress } from '../core/course.js';
 import type { WorkspaceView } from '../core/action/types.js';
 import { TutorChat } from '../core/chat/tutorChat.js';
+import { DEFAULT_DAILY_CALL_LIMIT, SpendGuard, type SpendState } from '../core/spend.js';
 import type { ChatContext, ChatMessage } from '../core/chat/types.js';
 import { extractRegion } from '../core/lesson/region.js';
 import { TutorSidebar, type SidebarAction } from './sidebar.js';
@@ -52,16 +53,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const store = new LearnerStore(context.globalStorageUri.fsPath);
   let model = await store.load(Date.now());
 
-  let conceptIndex = new Map<string, ConceptEntry>();
-  try {
-    const pack = await loadPackFromDisk(
-      vscode.Uri.joinPath(context.extensionUri, 'packs', 'rust-borrow-basics').fsPath
-    );
-    conceptIndex = indexBySignature(pack);
-    output.appendLine(`[packs] loaded ${pack.meta.id} with ${String(pack.concepts.length)} concepts`);
-  } catch (err) {
-    // A broken pack must not take the extension down — detection and logging still have value.
-    output.appendLine(`[packs] failed to load: ${String(err)}`);
+  // Every pack in the folder, so adding teaching content never means editing this file.
+  const conceptIndex = new Map<string, ConceptEntry>();
+  const PACK_IDS = ['rust-borrow-basics', 'rust-common-errors', 'rust-from-scratch'];
+  for (const id of PACK_IDS) {
+    try {
+      const pack = await loadPackFromDisk(
+        vscode.Uri.joinPath(context.extensionUri, 'packs', id).fsPath
+      );
+      for (const [key, concept] of indexBySignature(pack)) {
+        if (!conceptIndex.has(key)) conceptIndex.set(key, concept);
+      }
+      output.appendLine(
+        `[packs] loaded ${pack.meta.id} — ${String(pack.concepts.length)} concepts, ${String(pack.lessons.length)} lessons`
+      );
+    } catch (err) {
+      // A broken pack must not take the extension down; the others still teach.
+      output.appendLine(`[packs] ${id} failed to load: ${String(err)}`);
+    }
   }
 
   // ---- guided course -------------------------------------------------------
@@ -75,9 +84,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const coursePack = await loadPackFromDisk(
       vscode.Uri.joinPath(context.extensionUri, 'packs', 'rust-from-scratch').fsPath
     );
-    for (const [key, concept] of indexBySignature(coursePack)) {
-      if (!conceptIndex.has(key)) conceptIndex.set(key, concept);
-    }
     course = new Course(coursePack.lessons, loadProgress());
     output.appendLine(`[course] ${String(coursePack.lessons.length)} lessons available`);
   } catch (err) {
@@ -92,6 +98,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ...providerConfig,
     onDegraded: (reason) => output.appendLine(`[lesson] offline hint — ${reason}`),
   });
+  const spendKey = 'rustPairTeacher.spend';
+  const spend = new SpendGuard(
+    {
+      dailyCallLimit: vscode.workspace
+        .getConfiguration('rustPairTeacher')
+        .get('dailyCallLimit', DEFAULT_DAILY_CALL_LIMIT),
+      store: {
+        load: () => context.globalState.get<SpendState>(spendKey) ?? null,
+        save: (st) => void context.globalState.update(spendKey, st),
+      },
+    },
+    new Date().toISOString()
+  );
+
   let chatError: string | null = null;
   const chatHistoryKey = 'rustPairTeacher.chatHistory';
   const chat = new TutorChat({
@@ -102,6 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       load: () => context.workspaceState.get<ChatMessage[]>(chatHistoryKey) ?? [],
       save: (messages) => void context.workspaceState.update(chatHistoryKey, [...messages]),
     },
+    spend,
     strictNoCode: vscode.workspace.getConfiguration('rustPairTeacher').get('strictNoCode', true),
     onChanged: () => refreshSidebar(),
     onError: (message) => {
@@ -537,7 +558,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const snap = telemetry.snapshot();
       const doc = await vscode.workspace.openTextDocument({
         language: 'json',
-        content: JSON.stringify({ snapshot: snap, reading: interpret(snap) }, null, 2),
+        content: JSON.stringify(
+          { snapshot: snap, reading: interpret(snap), spend: spend.snapshot() },
+          null,
+          2
+        ),
       });
       await vscode.window.showTextDocument(doc);
     }),

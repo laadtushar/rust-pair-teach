@@ -20,7 +20,7 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 | ~~Chat history is lost on reload~~ | Fixed: `TutorChat` takes an injected `ChatStore`, backed by `workspaceState` |
 | Chat is invisible to the learner model | `recordEpisode`/`noteResolvedUnaided` reachable only from the detector (`extension.ts:181`) |
 | Chat is invisible to telemetry | No `telemetry.*` call on any chat path |
-| No spend guard exists | Design N2 promises a daily budget; no `budget`/`rateLimit` anywhere in `src/` |
+| ~~No spend guard exists~~ | Fixed: `SpendGuard`, daily call ceiling, persisted and shown in telemetry |
 | No response caching exists | Design §3.5 promises it; no cache in `src/` |
 | ~~No streaming~~ | Fixed: optional `stream()` on the adapter, SSE-decoded; providers without it fall back |
 | No integration test against real VS Code | `@vscode/test-electron` is not a dependency; no integration test file |
@@ -154,7 +154,7 @@ the existing `AbortController` in `openaiCompatible.ts` and leaves the history c
 
 ---
 
-### B3 — Daily spend guard and response cache `P1` `M`
+### B3 — Daily spend guard and response cache `P1` `M` — **spend guard DONE; cache still blocked on Q4**
 
 **Why.** Design N2 targets <$0.02 per teachable moment and §3.5 promises caching; neither exists.
 Chat sends the full lesson context every turn, so cost per session is materially higher than the
@@ -244,7 +244,7 @@ a small end-to-end CLI project.
 working checks; each names the concepts it exercises; `test/course.test.ts` extended to assert the
 new ordering and that every lesson's checks are satisfiable.
 
-### D2 — Concept entries for every error code the lessons can produce `P2` `M`
+### D2 — Concept entries for every error code the lessons can produce `P2` `M` — **DONE**
 
 **Why.** `session.ts` returns `no_concept` and stays silent for unmapped codes. The lessons
 deliberately provoke E0384, E0425, E0601, E0308 — verified present in the course pack's concept
