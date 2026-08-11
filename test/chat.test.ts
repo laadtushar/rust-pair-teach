@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildChatPrompt, limitCodeInReply } from '../src/core/chat/prompt.js';
-import { TutorChat } from '../src/core/chat/tutorChat.js';
+import { MAX_STORED_MESSAGES, TutorChat } from '../src/core/chat/tutorChat.js';
 import type { ChatContext, ChatMessage } from '../src/core/chat/types.js';
 import { ProviderError, type ProviderAdapter } from '../src/core/provider/types.js';
 
@@ -180,5 +180,60 @@ describe('conversation', () => {
     const c = chat(provider(long), { strictNoCode: false });
     await c.say('show me', CTX, 1);
     expect(c.messages[1]!.text).toContain('let z = 3;');
+  });
+});
+
+describe('persistence (A4)', () => {
+  function fakeStore(seed: ChatMessage[] = []) {
+    let saved = [...seed];
+    return {
+      store: {
+        load: () => [...saved],
+        save: (m: readonly ChatMessage[]) => {
+          saved = [...m];
+        },
+      },
+      get saved() {
+        return saved;
+      },
+    };
+  }
+
+  it('restores a conversation from storage on construction', () => {
+    // Reloading the window is what the setup wizard tells people to do; the conversation must
+    // survive it.
+    const f = fakeStore([{ speaker: 'tutor', text: 'welcome back', at: 1 }]);
+    const c = chat(provider('x'), { store: f.store });
+    expect(c.messages.map((m) => m.text)).toEqual(['welcome back']);
+  });
+
+  it('saves both sides of an exchange', async () => {
+    const f = fakeStore();
+    const c = chat(provider('a reply'), { store: f.store });
+    await c.say('a question', CTX, 1);
+    expect(f.saved.map((m) => m.speaker)).toEqual(['learner', 'tutor']);
+  });
+
+  it('clears storage when the conversation is cleared', async () => {
+    const f = fakeStore();
+    const c = chat(provider('x'), { store: f.store });
+    await c.say('hi', CTX, 1);
+    c.reset();
+    expect(f.saved).toEqual([]);
+  });
+
+  it('caps what it stores', async () => {
+    const f = fakeStore();
+    const c = chat(provider('r'), { store: f.store });
+    for (let i = 0; i < MAX_STORED_MESSAGES; i++) await c.say(`m${String(i)}`, CTX, i);
+    expect(f.saved.length).toBe(MAX_STORED_MESSAGES);
+    // Oldest dropped, newest kept.
+    expect(f.saved.at(-1)!.text).toBe('r');
+  });
+
+  it('works with no store at all, for an ephemeral conversation', async () => {
+    const c = chat(provider('x'));
+    await c.say('hi', CTX, 1);
+    expect(c.messages).toHaveLength(2);
   });
 });

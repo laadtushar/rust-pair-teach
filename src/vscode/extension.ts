@@ -23,7 +23,7 @@ import { lessonView, type CourseMenuView } from '../core/viewModel.js';
 import { Course, emptyProgress, type CourseProgress } from '../core/course.js';
 import type { WorkspaceView } from '../core/action/types.js';
 import { TutorChat } from '../core/chat/tutorChat.js';
-import type { ChatContext } from '../core/chat/types.js';
+import type { ChatContext, ChatMessage } from '../core/chat/types.js';
 import { extractRegion } from '../core/lesson/region.js';
 import { TutorSidebar, type SidebarAction } from './sidebar.js';
 
@@ -84,15 +84,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     output.appendLine(`[course] failed to load: ${String(err)}`);
   }
 
+  // One provider, shared. Constructing it twice meant two clients, a duplicated [provider] log
+  // line, and the credential warning firing twice on activation.
+  const providerConfig = await providerFromSettings(output, context.secrets);
+
   const engine = new LessonEngine({
-    ...(await providerFromSettings(output, context.secrets)),
+    ...providerConfig,
     onDegraded: (reason) => output.appendLine(`[lesson] offline hint — ${reason}`),
   });
-
-  const providerConfig = await providerFromSettings(output, context.secrets);
   let chatError: string | null = null;
+  const chatHistoryKey = 'rustPairTeacher.chatHistory';
   const chat = new TutorChat({
     ...providerConfig,
+    store: {
+      // workspaceState, not globalState: a conversation about one project must not surface in
+      // another.
+      load: () => context.workspaceState.get<ChatMessage[]>(chatHistoryKey) ?? [],
+      save: (messages) => void context.workspaceState.update(chatHistoryKey, [...messages]),
+    },
     strictNoCode: vscode.workspace.getConfiguration('rustPairTeacher').get('strictNoCode', true),
     onChanged: () => refreshSidebar(),
     onError: (message) => {

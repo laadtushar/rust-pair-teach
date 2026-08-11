@@ -2,6 +2,17 @@ import type { ProviderAdapter } from '../provider/types.js';
 import { buildChatPrompt, limitCodeInReply } from './prompt.js';
 import type { ChatContext, ChatMessage, ProactiveReason } from './types.js';
 
+/**
+ * Where the conversation is kept between sessions.
+ *
+ * Injected rather than assumed, so the core stays editor-agnostic and the persistence rules are
+ * testable against a fake.
+ */
+export interface ChatStore {
+  load(): ChatMessage[];
+  save(messages: readonly ChatMessage[]): void;
+}
+
 export interface TutorChatOptions {
   provider?: ProviderAdapter;
   model: string;
@@ -11,7 +22,12 @@ export interface TutorChatOptions {
   strictNoCode?: boolean;
   onChanged?: (history: readonly ChatMessage[]) => void;
   onError?: (message: string) => void;
+  /** Omit for an ephemeral conversation, as the tests do. */
+  store?: ChatStore;
 }
+
+/** Kept small enough to load instantly and large enough to hold a real session. */
+export const MAX_STORED_MESSAGES = 200;
 
 /**
  * A conversation with the tutor.
@@ -29,7 +45,11 @@ export class TutorChat {
   /** Deduplicates proactive nudges so the tutor does not repeat itself on every tick. */
   private lastProactive: { reason: ProactiveReason; key: string } | null = null;
 
-  constructor(private opts: TutorChatOptions) {}
+  constructor(private opts: TutorChatOptions) {
+    // Reloading the window is something the setup wizard actively tells people to do; losing the
+    // conversation to it would be an unforced insult.
+    this.history = opts.store?.load() ?? [];
+  }
 
   get messages(): readonly ChatMessage[] {
     return this.history;
@@ -47,6 +67,7 @@ export class TutorChat {
   reset(): void {
     this.history = [];
     this.lastProactive = null;
+    this.opts.store?.save(this.history);
     this.opts.onChanged?.(this.history);
   }
 
@@ -128,7 +149,10 @@ export class TutorChat {
   private push(message: ChatMessage): void {
     this.history.push(message);
     // Keep memory bounded; the prompt only carries the recent window anyway.
-    if (this.history.length > 200) this.history = this.history.slice(-200);
+    if (this.history.length > MAX_STORED_MESSAGES) {
+      this.history = this.history.slice(-MAX_STORED_MESSAGES);
+    }
+    this.opts.store?.save(this.history);
     this.opts.onChanged?.(this.history);
   }
 }

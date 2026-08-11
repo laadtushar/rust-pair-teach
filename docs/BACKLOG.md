@@ -16,8 +16,8 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 |---|---|
 | Scaffolding code is unreachable at runtime | `generateSkeleton`, `generatedIsSkeletonOnly`, `allDone` imported by 0 files in `src/`; no reference in `src/vscode/` |
 | `courseView` is now dead | Imported by 0 files after chat became the default surface |
-| The provider is constructed twice | `extension.ts:88` and `extension.ts:92` both call `providerFromSettings` |
-| Chat history is lost on reload | No `globalState` use in `src/core/chat/`; only the textarea draft is persisted (`sidebar.ts:159`) |
+| ~~The provider is constructed twice~~ | Fixed: one `providerFromSettings` call, shared by engine and chat |
+| ~~Chat history is lost on reload~~ | Fixed: `TutorChat` takes an injected `ChatStore`, backed by `workspaceState` |
 | Chat is invisible to the learner model | `recordEpisode`/`noteResolvedUnaided` reachable only from the detector (`extension.ts:181`) |
 | Chat is invisible to telemetry | No `telemetry.*` call on any chat path |
 | No spend guard exists | Design N2 promises a daily budget; no `budget`/`rateLimit` anywhere in `src/` |
@@ -58,7 +58,7 @@ by the corresponding number and the drop is stated in the commit message.
 
 ---
 
-### A2 — Construct the provider once `P0` `S`
+### A2 — Construct the provider once `P0` `S` — **DONE**
 
 **Why.** `extension.ts:88` and `:92` each call `providerFromSettings`, so two
 `OpenAiCompatibleProvider` instances exist, the output channel logs the provider line twice, and the
@@ -90,7 +90,7 @@ learner sees depends on their config. `courseView` is now dead entirely.
 
 ---
 
-### A4 — Persist chat history across reloads `P0` `S`
+### A4 — Persist chat history across reloads `P0` `S` — **DONE**
 
 **Why.** `TutorChat` holds history in memory only. Reloading the window — which the setup wizard
 *tells you to do* — silently destroys the conversation.
@@ -209,7 +209,7 @@ unverified.
 - **Risk:** headless VS Code in CI is fiddly and can be flaky. Time-box to `L`; if it exceeds that,
   fall back to C2 and re-scope.
 
-### C2 — Written manual test script `P1` `S`
+### C2 — Written manual test script `P1` `S` — **DONE (written; execution still owed)**
 
 **Why.** Until C1 exists, "did we break it" has no answer. Cheap, immediate, and useful regardless.
 
