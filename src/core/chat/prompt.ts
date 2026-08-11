@@ -126,3 +126,84 @@ export function limitCodeInReply(text: string, maxLines = 3): { text: string; re
 
   return { text: out, redacted };
 }
+
+
+/**
+ * Hide a code fence that has not finished arriving.
+ *
+ * Mid-stream, an opened ``` with no closing pair would render as a code block containing whatever
+ * has been typed so far — which looks exactly like a complete answer for as long as it takes the
+ * rest to arrive. Better to withhold the partial block than to flash a plausible-looking solution.
+ */
+export function maskIncompleteFence(partial: string): string {
+  const fences = (partial.match(/```/g) ?? []).length;
+  if (fences % 2 === 0) return partial;
+  const lastOpen = partial.lastIndexOf('```');
+  return partial.slice(0, lastOpen).trimEnd() + '\n\n…';
+}
+
+export interface PromptLimits {
+  /** Rough ceiling on the whole request. Characters, not tokens — see the note below. */
+  maxChars: number;
+}
+
+export interface FittedPrompt {
+  messages: Message[];
+  /** What had to be given up to fit, in the order it was dropped. */
+  degradations: string[];
+}
+
+/**
+ * Build a prompt that fits (B5).
+ *
+ * Characters rather than tokens on purpose: a real tokenizer is a large dependency for a bound that
+ * only needs to be roughly right, and every provider tokenizes differently anyway. Four characters
+ * per token is the usual rule of thumb, so a 4k-context model is served by roughly 12k characters
+ * once the reply is allowed for.
+ *
+ * The order of sacrifice matters and is deliberate: older conversation goes first because the code
+ * in front of the learner is what the tutor is actually discussing.
+ */
+export function fitChatPrompt(
+  history: ChatMessage[],
+  ctx: ChatContext,
+  proactive: ProactiveReason | undefined,
+  limits: PromptLimits
+): FittedPrompt {
+  const degradations: string[] = [];
+  const size = (m: Message[]): number => m.reduce((n, x) => n + x.content.length, 0);
+
+  let turns = history.slice(-HISTORY_TURNS);
+  let messages = buildChatPrompt(turns, ctx, proactive);
+  if (size(messages) <= limits.maxChars) return { messages, degradations };
+
+  // 1. Drop the oldest turns.
+  while (turns.length > 0 && size(messages) > limits.maxChars) {
+    turns = turns.slice(1);
+    messages = buildChatPrompt(turns, ctx, proactive);
+  }
+  if (turns.length < Math.min(history.length, HISTORY_TURNS)) {
+    degradations.push('dropped older conversation');
+  }
+  if (size(messages) <= limits.maxChars) return { messages, degradations };
+
+  // 2. Narrow the code region.
+  if (ctx.code) {
+    const lines = ctx.code.split('\n');
+    let keep = Math.max(4, Math.floor(lines.length / 2));
+    let narrowed = ctx;
+    while (keep >= 4) {
+      narrowed = { ...ctx, code: lines.slice(0, keep).join('\n') };
+      messages = buildChatPrompt(turns, narrowed, proactive);
+      if (size(messages) <= limits.maxChars) break;
+      keep = Math.floor(keep / 2);
+    }
+    degradations.push('narrowed the code region');
+  }
+
+  // 3. Nothing left to give. Send it and say so, rather than silently truncating at the provider.
+  if (size(messages) > limits.maxChars) {
+    degradations.push('still over the limit — the model may truncate');
+  }
+  return { messages, degradations };
+}

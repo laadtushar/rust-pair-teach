@@ -22,7 +22,7 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 | Chat is invisible to telemetry | No `telemetry.*` call on any chat path |
 | No spend guard exists | Design N2 promises a daily budget; no `budget`/`rateLimit` anywhere in `src/` |
 | No response caching exists | Design §3.5 promises it; no cache in `src/` |
-| No streaming | `openaiCompatible.ts` awaits the whole body — B4 is now done, so B1 is unblocked |
+| ~~No streaming~~ | Fixed: optional `stream()` on the adapter, SSE-decoded; providers without it fall back |
 | No integration test against real VS Code | `@vscode/test-electron` is not a dependency; no integration test file |
 | Nothing has ever run in real VS Code | Only a stubbed `require()` smoke test |
 
@@ -124,7 +124,7 @@ nothing about chat, meaning the Stage-1 validation instrument is blind to the ma
 
 ## Epic B — Make chat good enough to use daily (P1)
 
-### B1 — Stream replies token by token `P1` `M`
+### B1 — Stream replies token by token `P1` `M` — **DONE**
 
 **Why.** `openaiCompatible.ts` awaits the entire response. On a local 7B model a 400-token reply is
 several seconds of a static "…". For a surface whose whole promise is conversation, that latency is
@@ -182,7 +182,7 @@ survive streaming.
 
 ---
 
-### B5 — Handle context that exceeds the model's window `P1` `S`
+### B5 — Handle context that exceeds the model's window `P1` `S` — **DONE**
 
 **Why.** `buildChatPrompt` sends the persona, the full lesson steps, a 60-line code region and up to
 12 turns, unbounded in total. A small local model with a 4k window will silently truncate or error.

@@ -1,5 +1,5 @@
 import type { ProviderAdapter } from '../provider/types.js';
-import { buildChatPrompt, limitCodeInReply } from './prompt.js';
+import { fitChatPrompt, limitCodeInReply, maskIncompleteFence } from './prompt.js';
 import type { ChatContext, ChatMessage, ProactiveReason } from './types.js';
 
 /**
@@ -22,6 +22,8 @@ export interface TutorChatOptions {
   strictNoCode?: boolean;
   onChanged?: (history: readonly ChatMessage[]) => void;
   onError?: (message: string) => void;
+  /** Reports what had to be dropped to fit the model's context. */
+  onDegraded?: (reason: string) => void;
   /** Omit for an ephemeral conversation, as the tests do. */
   store?: ChatStore;
   /**
@@ -31,6 +33,8 @@ export interface TutorChatOptions {
    * clears — from producing a nudge on every save.
    */
   minProactiveIntervalMs?: number;
+  /** Roughly how large a request may get before older turns are dropped (B5). */
+  maxPromptChars?: number;
 }
 
 /** Kept small enough to load instantly and large enough to hold a real session. */
@@ -38,6 +42,9 @@ export const MAX_STORED_MESSAGES = 200;
 
 /** Provisional, like every other interval in this project. */
 export const DEFAULT_MIN_PROACTIVE_INTERVAL_MS = 20_000;
+
+/** ~12k characters ≈ 3k tokens, which leaves room for a reply inside a 4k-context local model. */
+export const DEFAULT_MAX_PROMPT_CHARS = 12_000;
 
 /**
  * A conversation with the tutor.
@@ -138,16 +145,46 @@ export class TutorChat {
     this.inFlight = controller;
     this.opts.onChanged?.(this.history);
 
+    const provider = this.opts.provider;
+    const fitted = fitChatPrompt(this.history, ctx, proactive, {
+      maxChars: this.opts.maxPromptChars ?? DEFAULT_MAX_PROMPT_CHARS,
+    });
+    if (fitted.degradations.length > 0) {
+      this.opts.onDegraded?.(fitted.degradations.join('; '));
+    }
+
+    const callOpts = {
+      model: this.opts.model,
+      maxTokens: this.opts.maxTokens ?? 500,
+      timeoutMs: this.opts.timeoutMs ?? 30_000,
+      signal: controller.signal,
+    };
+
+    // The streamed message is a real entry in the history, updated in place, so the view needs no
+    // separate notion of a partial reply.
+    let streaming: ChatMessage | null = null;
+    // Raw and displayed text are kept apart on purpose: masking the accumulator would delete the
+    // very characters it is meant to be hiding until they are complete.
+    let raw = '';
+
     try {
-      const completion = await this.opts.provider.complete(
-        buildChatPrompt(this.history, ctx, proactive),
-        {
-          model: this.opts.model,
-          maxTokens: this.opts.maxTokens ?? 500,
-          timeoutMs: this.opts.timeoutMs ?? 30_000,
-          signal: controller.signal,
-        }
-      );
+      const completion = provider.stream
+        ? await provider.stream(fitted.messages, callOpts, (delta) => {
+            if (controller.signal.aborted) return;
+            if (!streaming) {
+              streaming = {
+                speaker: 'tutor',
+                text: '',
+                at: now,
+                ...(proactive ? { proactive: true } : {}),
+              };
+              this.history.push(streaming);
+            }
+            raw += delta;
+            streaming.text = maskIncompleteFence(raw);
+            this.opts.onChanged?.(this.history);
+          })
+        : await provider.complete(fitted.messages, callOpts);
 
       const reply =
         this.opts.strictNoCode === false
@@ -155,6 +192,12 @@ export class TutorChat {
           : limitCodeInReply(completion.text);
 
       const text = reply.text.trim();
+
+      if (streaming) {
+        // Redaction is applied to the finished text, never to a fragment — a rule that judged a
+        // half-arrived block would judge it wrongly.
+        this.history = this.history.filter((m) => m !== streaming);
+      }
       if (text !== '') {
         this.push({
           speaker: 'tutor',
@@ -162,8 +205,12 @@ export class TutorChat {
           at: now,
           ...(proactive ? { proactive: true } : {}),
         });
+      } else {
+        this.opts.store?.save(this.history);
       }
     } catch (err) {
+      // Drop any partial reply; half a sentence attributed to the tutor is worse than none.
+      if (streaming) this.history = this.history.filter((m) => m !== streaming);
       // A cancellation is the learner getting what they asked for, not a failure to report.
       if (!controller.signal.aborted) this.opts.onError?.(String(err));
     } finally {

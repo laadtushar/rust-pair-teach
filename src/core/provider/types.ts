@@ -23,6 +23,15 @@ export interface Completion {
 export interface ProviderAdapter {
   readonly id: string;
   complete(messages: Message[], opts: CompletionOptions): Promise<Completion>;
+  /**
+   * Optional. Adapters without it fall back to `complete`, so a provider that cannot stream still
+   * works — it just feels slower.
+   */
+  stream?(
+    messages: Message[],
+    opts: CompletionOptions,
+    onDelta: (text: string) => void
+  ): Promise<Completion>;
 }
 
 export class ProviderError extends Error {

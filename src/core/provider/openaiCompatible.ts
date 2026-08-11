@@ -29,10 +29,70 @@ export class OpenAiCompatibleProvider implements ProviderAdapter {
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch;
   }
 
-  async complete(messages: Message[], opts: CompletionOptions): Promise<Completion> {
+  /**
+   * Server-sent events, decoded as they arrive.
+   *
+   * Waiting for a whole reply before showing anything is fine for a hint card and wrong for a
+   * conversation: on a local 7B model that is several seconds of staring at a dot.
+   */
+  async stream(
+    messages: Message[],
+    opts: CompletionOptions,
+    onDelta: (text: string) => void
+  ): Promise<Completion> {
+    const res = await this.request(messages, opts, true);
+    const body = res.body;
+    if (!body) throw new ProviderError('provider returned no stream body', 'bad_response');
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let text = '';
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE frames are separated by a blank line; a frame can straddle two chunks.
+        const frames = buffer.split('\n\n');
+        buffer = frames.pop() ?? '';
+
+        for (const frame of frames) {
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '' || payload === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(payload) as {
+                choices?: Array<{ delta?: { content?: string } }>;
+              };
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (typeof delta === 'string' && delta !== '') {
+                text += delta;
+                onDelta(delta);
+              }
+            } catch {
+              // A malformed frame is not worth failing a whole reply over.
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return { text };
+  }
+
+  private async request(
+    messages: Message[],
+    opts: CompletionOptions,
+    stream: boolean
+  ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-    // Caller-driven cancellation rides the same controller as the timeout.
     const onExternalAbort = () => controller.abort();
     opts.signal?.addEventListener('abort', onExternalAbort, { once: true });
 
@@ -49,6 +109,7 @@ export class OpenAiCompatibleProvider implements ProviderAdapter {
           max_tokens: opts.maxTokens,
           temperature: 0.4,
           messages,
+          ...(stream ? { stream: true } : {}),
         }),
       });
 
@@ -61,7 +122,23 @@ export class OpenAiCompatibleProvider implements ProviderAdapter {
       if (!res.ok) {
         throw new ProviderError(`provider returned ${res.status}`, 'network');
       }
+      return res;
+    } catch (err) {
+      if (err instanceof ProviderError) throw err;
+      if (err instanceof Error && err.name === 'AbortError') {
+        if (opts.signal?.aborted) throw new ProviderError('cancelled by the learner', 'cancelled');
+        throw new ProviderError(`provider timed out after ${opts.timeoutMs}ms`, 'timeout');
+      }
+      throw new ProviderError(String(err), 'network');
+    } finally {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onExternalAbort);
+    }
+  }
 
+  async complete(messages: Message[], opts: CompletionOptions): Promise<Completion> {
+    try {
+      const res = await this.request(messages, opts, false);
       const body = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -85,14 +162,7 @@ export class OpenAiCompatibleProvider implements ProviderAdapter {
       return { text, ...(usage ? { usage } : {}) };
     } catch (err) {
       if (err instanceof ProviderError) throw err;
-      if (err instanceof Error && err.name === 'AbortError') {
-        if (opts.signal?.aborted) throw new ProviderError('cancelled by the learner', 'cancelled');
-        throw new ProviderError(`provider timed out after ${opts.timeoutMs}ms`, 'timeout');
-      }
       throw new ProviderError(String(err), 'network');
-    } finally {
-      clearTimeout(timer);
-      opts.signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 }

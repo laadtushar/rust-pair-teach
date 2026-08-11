@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildChatPrompt, limitCodeInReply } from '../src/core/chat/prompt.js';
+import { buildChatPrompt, fitChatPrompt, limitCodeInReply } from '../src/core/chat/prompt.js';
 import { MAX_STORED_MESSAGES, TutorChat } from '../src/core/chat/tutorChat.js';
 import type { ChatContext, ChatMessage } from '../src/core/chat/types.js';
 import { ProviderError, type ProviderAdapter } from '../src/core/provider/types.js';
@@ -323,5 +323,116 @@ describe('no workspace open (F3)', () => {
 
   it('says nothing about it when a folder is open', () => {
     expect(buildChatPrompt([], CTX)[0]!.content).not.toMatch(/no folder is open/i);
+  });
+});
+
+describe('streaming (B1)', () => {
+  function streamingProvider(chunks: string[]): ProviderAdapter {
+    return {
+      id: 'stream',
+      complete: async () => ({ text: chunks.join('') }),
+      stream: async (_m, _o, onDelta) => {
+        for (const c of chunks) onDelta(c);
+        return { text: chunks.join('') };
+      },
+    };
+  }
+
+  it('shows the reply as it arrives', async () => {
+    const seen: string[] = [];
+    const c = chat(streamingProvider(['Where ', 'does ', 'it move?']), {
+      onChanged: (h) => {
+        const last = h[h.length - 1];
+        if (last?.speaker === 'tutor') seen.push(last.text);
+      },
+    });
+    await c.say('help', CTX, 1);
+
+    expect(seen.length).toBeGreaterThan(1);
+    expect(c.messages.at(-1)!.text).toBe('Where does it move?');
+  });
+
+  it('falls back to complete() for a provider that cannot stream', async () => {
+    const c = chat(provider('all at once'));
+    await c.say('hi', CTX, 1);
+    expect(c.messages.at(-1)!.text).toBe('all at once');
+  });
+
+  it('withholds a code fence until it has finished arriving', async () => {
+    // A half-arrived block renders as a complete-looking answer for as long as the rest takes.
+    const partials: string[] = [];
+    const c = chat(
+      streamingProvider(['Try this:\n```rust\nlet a = 1;\n', 'let b = 2;\n```']),
+      {
+        strictNoCode: false,
+        onChanged: (h) => {
+          const last = h[h.length - 1];
+          if (last?.speaker === 'tutor') partials.push(last.text);
+        },
+      }
+    );
+    await c.say('show me', CTX, 1);
+
+    // The first partial is the genuine mid-stream state: one fence opened, none closed.
+    const midStream = partials[0] ?? '';
+    expect(midStream).not.toContain('let a = 1;');
+    expect(midStream).toMatch(/…$/);
+    // The finished message is intact.
+    expect(c.messages.at(-1)!.text).toContain('let b = 2;');
+  });
+
+  it('applies redaction to the finished text, not to fragments', async () => {
+    const c = chat(
+      streamingProvider(['```rust\nfn a() {\n', '  let x = 1;\n  let y = 2;\n  let z = 3;\n}\n```'])
+    );
+    await c.say('write it for me', CTX, 1);
+    expect(c.messages.at(-1)!.text).toMatch(/remember it far better/);
+    expect(c.messages.filter((m) => m.speaker === 'tutor')).toHaveLength(1);
+  });
+
+  it('leaves no half-sentence behind when a stream fails', async () => {
+    const c = chat({
+      id: 'broken',
+      complete: async () => ({ text: '' }),
+      stream: async (_m, _o, onDelta) => {
+        onDelta('I was about to say');
+        throw new ProviderError('died', 'network');
+      },
+    });
+    await c.say('hi', CTX, 1);
+    expect(c.messages.map((m) => m.speaker)).toEqual(['learner']);
+  });
+});
+
+describe('context that will not fit (B5)', () => {
+  const bigHistory: ChatMessage[] = Array.from({ length: 12 }, (_, i) => ({
+    speaker: i % 2 ? 'tutor' : 'learner',
+    text: 'x'.repeat(400),
+    at: i,
+  }));
+
+  it('sends everything when it fits', () => {
+    const fitted = fitChatPrompt([], { code: 'fn main() {}' }, undefined, { maxChars: 100_000 });
+    expect(fitted.degradations).toEqual([]);
+  });
+
+  it('drops older conversation first, keeping the code', () => {
+    // The code in front of the learner is what the tutor is discussing; old turns are not.
+    const fitted = fitChatPrompt(bigHistory, { code: 'let marker = 1;' }, undefined, {
+      maxChars: 3_000,
+    });
+    expect(fitted.degradations[0]).toMatch(/dropped older conversation/);
+    expect(fitted.messages[0]!.content).toContain('let marker = 1;');
+  });
+
+  it('narrows the code only once there is no conversation left to drop', () => {
+    const hugeCode = Array.from({ length: 200 }, (_, i) => `let v${String(i)} = ${String(i)};`).join('\n');
+    const fitted = fitChatPrompt([], { code: hugeCode }, undefined, { maxChars: 2_500 });
+    expect(fitted.degradations).toContain('narrowed the code region');
+  });
+
+  it('says so rather than silently overflowing when nothing more can go', () => {
+    const fitted = fitChatPrompt([], {}, undefined, { maxChars: 10 });
+    expect(fitted.degradations.at(-1)).toMatch(/still over the limit/);
   });
 });

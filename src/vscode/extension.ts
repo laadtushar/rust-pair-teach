@@ -109,6 +109,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       output.appendLine(`[chat] ${message}`);
       refreshSidebar();
     },
+    onDegraded: (reason) => output.appendLine(`[chat] context trimmed: ${reason}`),
   });
 
   const session = new TutorSession({
