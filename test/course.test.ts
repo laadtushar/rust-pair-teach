@@ -31,6 +31,14 @@ describe('the course pack', () => {
       'structs',
       'option-result',
       'tests',
+      'collections',
+      'strings',
+      'error-handling',
+      'traits',
+      'generics',
+      'iterators',
+      'modules',
+      'cli-project',
     ]);
   });
 
@@ -52,6 +60,13 @@ describe('the course pack', () => {
         expect(s.instruction.length, l.id).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('ends on a program the learner built rather than an exercise', () => {
+    // A course that stops at exercises leaves someone who cannot start anything of their own.
+    const last = lessons.at(-1)!;
+    expect(last.id).toBe('cli-project');
+    expect(last.goal).toMatch(/command-line program of your own/);
   });
 
   it('reaches ownership and borrowing, which are the whole point', () => {
@@ -93,14 +108,14 @@ describe('progression', () => {
     const course = new Course(lessons, emptyProgress());
     course.complete('hello');
     course.complete('hello');
-    expect(course.overall()).toEqual({ done: 1, total: 8 });
+    expect(course.overall()).toEqual({ done: 1, total: 16 });
   });
 
   it('runs out of lessons cleanly at the end', () => {
     const course = new Course(lessons, emptyProgress());
     for (const l of lessons) course.complete(l.id);
     expect(course.nextLesson()).toBeNull();
-    expect(course.overall()).toEqual({ done: 8, total: 8 });
+    expect(course.overall()).toEqual({ done: 16, total: 16 });
   });
 });
 
@@ -152,7 +167,7 @@ describe('step checking against a real workspace', () => {
     course.complete('hello');
     const state = course.refresh(workspace({}))!;
     expect(state.index).toBe(1);
-    expect(state.total).toBe(8);
+    expect(state.total).toBe(16);
   });
 
   it('lets a learner finish a lesson whose checks did not match', () => {

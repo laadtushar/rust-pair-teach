@@ -231,7 +231,7 @@ Results published in the README as a compatibility table. Manually triggered, ne
 
 ## Epic D — Content and pedagogy (P2)
 
-### D1 — Lessons 9–16 `P2` `L`
+### D1 — Lessons 9–16 `P2` `L` — **DONE**
 
 **Why.** The course stops at tests. A learner who finishes has no path onward, and the README claims
 "from scratch" while covering only the first third of a typical Rust introduction.

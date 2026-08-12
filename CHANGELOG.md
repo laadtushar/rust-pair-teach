@@ -3,6 +3,31 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.9.0 — the course now goes somewhere
+
+Sixteen lessons instead of eight, ending on a program you built rather than an exercise you
+finished.
+
+**New lessons**
+
+Collections (Vec and HashMap, and the `entry` pattern) · Strings (why `String` and `&str` both
+exist, and which to take in a parameter) · The `?` operator (honest error handling that is shorter
+than the dishonest kind) · Traits · Generics and what a bound is actually for · Iterators · Splitting
+a file into modules, including the privacy error everyone hits · and finally a small command-line
+program of your own, with tests.
+
+**Also**
+
+- The tutor now understands twenty-four compiler errors rather than eleven — traits and missing
+  methods, mutability, moves out of borrowed content, modules and visibility, exhaustive matching,
+  and lifetime annotations. Fewer moments where it has nothing to say.
+- Replies stream in as they are written instead of appearing all at once. You can stop one
+  mid-sentence.
+- A daily cap on model calls, so a bug cannot quietly run up a bill. The built-in material keeps
+  teaching after the cap is reached.
+- On a small local model, older conversation is trimmed before the code you are looking at, so the
+  tutor keeps talking about the right thing.
+
 ## 0.4.0 — it talks to you now
 
 The sidebar is a conversation. The tutor speaks first, keeps talking as you work, and you can type
