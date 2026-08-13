@@ -1,13 +1,9 @@
 /**
- * Guided scaffolding (F7).
+ * Steps a learner performs, and how to tell whether they did.
  *
- * Some lessons need structure — a module file, a test file, a `cargo add`. The teacher may build
- * that classroom. It may never write the essay.
- *
- * Concretely: file bodies are `todo!()` and nothing else, every operation is previewed, and the
- * default path is the learner doing it themselves with the watcher confirming each step. The
- * "do it for me" path exists so multi-file chores are not tedious, not so the work gets done for
- * anyone.
+ * The tutor describes structure and checks whether it appeared. It never creates it — that
+ * capability was removed deliberately (Q1), because a tutor that can write files is one refactor
+ * away from writing solutions, and nothing was calling it.
  */
 
 export type StepCheck =
@@ -27,13 +23,6 @@ export interface ActionCard {
   /** Why this structure is needed — a step without a reason is an order. */
   rationale: string;
   steps: ActionStep[];
-  /** Files the "do it for me" path would create. Skeletons only. */
-  scaffolds: ScaffoldFile[];
-}
-
-export interface ScaffoldFile {
-  path: string;
-  contents: string;
 }
 
 export interface StepStatus {

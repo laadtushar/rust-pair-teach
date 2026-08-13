@@ -14,12 +14,12 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 
 | Finding | Evidence |
 |---|---|
-| Scaffolding code is unreachable at runtime | `generateSkeleton`, `generatedIsSkeletonOnly`, `allDone` imported by 0 files in `src/`; no reference in `src/vscode/` |
-| `courseView` is now dead | Imported by 0 files after chat became the default surface |
+| ~~Scaffolding code is unreachable at runtime~~ | Fixed: deleted (Q1 — the tutor never writes files) |
+| ~~`courseView` is now dead~~ | Fixed: chat is the only teaching surface; the hint card and the whole ladder engine were deleted with it (A3) |
 | ~~The provider is constructed twice~~ | Fixed: one `providerFromSettings` call, shared by engine and chat |
 | ~~Chat history is lost on reload~~ | Fixed: `TutorChat` takes an injected `ChatStore`, backed by `workspaceState` |
-| Chat is invisible to the learner model | `recordEpisode`/`noteResolvedUnaided` reachable only from the detector (`extension.ts:181`) |
-| Chat is invisible to telemetry | No `telemetry.*` call on any chat path |
+| ~~Chat is invisible to the learner model~~ | Fixed: the compiler reports the resolution, tutor involvement sets the credit (A5/Q3) |
+| ~~Chat is invisible to telemetry~~ | Fixed: `onTelemetry` seam on `TutorChat`; `interpret()` reads replies-per-nudge (A5) |
 | ~~No spend guard exists~~ | Fixed: `SpendGuard`, daily call ceiling, persisted and shown in telemetry |
 | No response caching exists | Design §3.5 promises it; no cache in `src/` |
 | ~~No streaming~~ | Fixed: optional `stream()` on the adapter, SSE-decoded; providers without it fall back |
@@ -33,28 +33,16 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 Dead code and duplicate wiring make the codebase lie about what it does. These are cheap and
 unblock accurate reasoning about everything else.
 
-### A1 — Delete or wire the scaffolding module `P0` `S`
+### A1 — Delete or wire the scaffolding module `P0` `S` — **DONE (A1b)**
 
-**Why.** `src/core/action/skeleton.ts` (102 lines) and its 17 tests pass, but nothing in
-`src/vscode/` imports them. The test count implies a feature that does not exist at runtime.
+**Why.** `src/core/action/skeleton.ts` (102 lines) and its 17 tests passed, but nothing in
+`src/vscode/` imported them. The test count implied a feature that did not exist at runtime.
 
-**Decision required first** — see [Q1](#q1). Two mutually exclusive options:
-- **A1a (wire it):** the tutor may create a file containing only `todo!()` bodies, on explicit
-  per-action confirmation with a preview diff.
-- **A1b (delete it):** remove `src/core/action/skeleton.ts` and `test/action.test.ts`'s skeleton
-  half; keep `verify.ts`, which the course genuinely uses.
+**Resolved** by [Q1](#q1): deleted. `src/core/action/skeleton.ts` is gone along with
+`ScaffoldFile`, `ActionCard.scaffolds` and the skeleton half of `test/action.test.ts`. `verify.ts`
+stays — the course genuinely uses it to tick steps.
 
-**Acceptance criteria (A1a).**
-- A chat reply may propose a file; the sidebar shows path + full contents before anything is written.
-- Nothing is written without a click. No global "always allow".
-- `generatedIsSkeletonOnly` is asserted on the content *before* the preview is shown; a violation
-  logs and shows nothing.
-- Writes are confined to the workspace root — a path escaping it is rejected with a test proving it.
-- **Files:** `src/vscode/extension.ts`, `src/vscode/sidebar.ts`, new `src/core/action/plan.ts`.
-- **Tests:** path-escape rejection; refusal when content fails the skeleton check; no-write-without-confirm.
-
-**Acceptance criteria (A1b).** `rg 'skeleton'` returns nothing outside git history; test count drops
-by the corresponding number and the drop is stated in the commit message.
+**Acceptance criteria.** `rg 'skeleton'` returns nothing outside git history. ✓
 
 ---
 
@@ -73,20 +61,30 @@ credential warning can fire twice on activation.
 
 ---
 
-### A3 — Resolve the two competing surfaces `P0` `M`
+### A3 — Resolve the two competing surfaces `P0` `M` — **DONE**
 
-**Why.** `extension.ts:231` branches: with a model configured, a fired moment goes to chat; without
-one, it renders the old hint card (`:235`, `:259`). So there are two teaching UIs and which one a
-learner sees depends on their config. `courseView` is now dead entirely.
+**Why.** `extension.ts` branched: with a model configured, a fired moment went to chat; without one,
+it rendered the old hint card. So there were two teaching UIs and which one a learner saw depended
+on their config.
 
-**Decision required first** — see [Q2](#q2).
+**Resolved** by [Q2](#q2): chat is the only surface, and the pack's teaching is delivered *into* it
+as a tutor message rather than through a second panel. `raise()` in `extension.ts` is now the single
+path — it nudges a configured model, or posts `session.offlineTeaching(...)` when there is none.
+
+**What went with it.** `lessonView`, `courseView`, the `hint` and `course` sidebar states,
+`SidebarAction`'s `escalate`/`solved`/`dismissed`, `TutorSession.offer`/`escalate`/`resolve`, and
+the whole ladder engine — `LessonEngine`, `lesson/contract.ts`, `lesson/prompt.ts`,
+`lesson/refusal.ts`. `staticHint` stays: it is what `offlineTeaching` reads.
+
+**What was kept rather than lost.** The ladder's refusal invariants became a direct assertion over
+authored pack content in `test/lesson.test.ts`; the prompt's privacy snapshot moved to
+`buildChatPrompt`, which is what actually leaves the machine now, and `describeEgress` is finally
+surfaced through **Rust Pair Teacher: Show what gets sent to the model**.
 
 **Acceptance criteria.**
-- Exactly one teaching surface reachable in a given configuration, documented in the README.
-- Whatever is retired is deleted, not left dangling.
-- If the card path is retired, `LessonEngine`, `staticHint`, `lessonView` and the hint-ladder tests
-  are removed or explicitly repurposed — **note this deletes the offline-capable path**, which is
-  why Q2 is a product decision, not a cleanup.
+- Exactly one teaching surface in every configuration. ✓
+- Whatever was retired is deleted, not left dangling. ✓
+- The offline path survives as content, not as a second UI. ✓
 
 ---
 
@@ -106,19 +104,24 @@ learner sees depends on their config. `courseView` is now dead entirely.
 
 ---
 
-### A5 — Feed chat into the learner model and telemetry `P0` `M`
+### A5 — Feed chat into the learner model and telemetry `P0` `M` — **DONE**
 
 **Why.** The learner model is the product's differentiator and chat is now the primary surface, so
-right now the differentiator is fed by a path most learners will not use. Telemetry likewise records
-nothing about chat, meaning the Stage-1 validation instrument is blind to the main interaction.
+the differentiator was fed by a path most learners would not use. Telemetry likewise recorded
+nothing about chat, meaning the Stage-1 validation instrument was blind to the main interaction.
+
+**Resolved** by [Q3](#q3): the compiler decides that something was resolved, and what the tutor did
+decides the credit. `MomentDetector.onCleared` calls `session.noteResolved(...)`; an error cleared
+without the tutor ever mentioning it grades as `unaided`, one cleared after a conversation as
+`self_level_2`. `noteAbandoned` runs on deactivate, so closing the window on an unsolved error is
+recorded too — otherwise the model only ever learns from successes.
 
 **Acceptance criteria.**
-- A resolved struggle discussed in chat records an episode with a concept id and a resolution.
-- Telemetry counts: messages sent, proactive nudges by reason, redactions triggered, provider errors.
-- `interpret()` gains a chat-aware reading, or explicitly states it cannot judge chat yet.
-- **Blocked on** [Q3](#q3): how a chat exchange maps to a `Resolution`, which is not obvious and must
-  not be invented.
-- **Files:** `src/core/chat/tutorChat.ts`, `src/core/telemetry.ts`, `src/vscode/extension.ts`.
+- A resolved struggle discussed in chat records an episode with a concept id and a resolution. ✓
+- Telemetry counts messages sent, proactive nudges by reason, redactions, provider errors and
+  cancellations, via `TutorChat`'s `onTelemetry` seam — shapes only, never text. ✓
+- `interpret()` gains a chat-aware reading: `conversation.repliesPerNudge` calls out a tutor that is
+  monologuing, which is the chat-era form of "noisy". ✓
 
 ---
 
@@ -345,22 +348,34 @@ lesson step reads as incomplete and the tutor may confidently discuss a project 
 These block the tickets that reference them. Each needs a human decision or an experiment; none
 should be guessed.
 
-### Q1 — Should the tutor ever write files?
-Blocks **A1**. The design says yes, narrowly (skeletons behind explicit confirmation). The chat
-pivot did not revisit it. Writing files is the largest single step toward the autocomplete pattern
-this product defines itself against.
+### Q1 — Should the tutor ever write files? — **DECIDED: no**
+The design allowed it narrowly; the chat pivot never revisited it, and nothing has asked for it
+since. A capability with no caller is not a feature, it is a liability with tests. Deleting it also
+removes the only code path that could ever grow into writing solutions. If a lesson later genuinely
+needs a file created, the learner types `cargo new` — which the course already teaches them to do.
+**Reversible**: the implementation is in git history and the check that guarded it was sound.
 
-### Q2 — Is the offline path still a requirement?
-Blocks **A3**. Chat requires a model. Retiring the card path means the extension does nothing useful
-without one — which contradicts the current README and changelog, and removes the "works with no AI
-at all" property that made it usable on a plane. Keeping both means maintaining two teaching
-surfaces indefinitely.
+### Q2 — Is the offline path still a requirement? — **DECIDED: keep the content, drop the second UI**
+Two teaching surfaces is the unscalable part, not the offline capability. So: **chat is the only
+surface**, and when no model is configured the built-in material is delivered *into the chat panel*
+as a tutor message rather than through a parallel card UI.
 
-### Q3 — What is a "resolution" in a conversation?
-Blocks **A5**. In the card model it was unambiguous: the learner clicked *I solved it*, or the
-diagnostic cleared. In chat there is no such click. Options: infer from the diagnostic clearing
-while a chat about it is open; ask the model to classify; add explicit buttons. Each has a different
-accuracy profile and none is obviously right.
+That keeps the property worth keeping — the extension teaches something on a plane, and a learner
+with no API account is not stared at by a disabled text box — while deleting a whole rendering path,
+its view model, and the branch that made which UI you saw depend on your configuration.
+
+### Q3 — What is a "resolution" in a conversation? — **DECIDED: infer from the compiler**
+Not from a button, and not by asking the model to classify — the first adds friction to the one
+interaction that should be frictionless, and the second spends a call to guess at something the
+compiler already knows.
+
+The rule: **a diagnostic clearing is the resolution**, and what the tutor did in the meantime sets
+the credit. Cleared with the tutor never having mentioned that concept is `unaided`. Cleared after
+the tutor discussed it is `self_level_2` — real credit, less than solving it cold. A concept
+discussed whose error is still present when the session ends is `abandoned`.
+
+This is deliberately approximate, and approximate in the learner's favour. The alternative is a
+differentiator fed by nothing, which is what shipping today would mean.
 
 ### Q4 — Can conversational turns be cached at all?
 Blocks half of **B3**. The existing design caches on (error code, code shape, hint level). A chat
@@ -381,11 +396,17 @@ remains the single largest unvalidated assumption in the project.
 
 ## Suggested order
 
-1. **A2, A4** — small, no decisions needed, immediately reduce harm.
-2. **C2** — write and run the manual script; it will find bugs the audit could not.
-3. **Q1, Q2, Q3** — decide, since A1, A3 and A5 are all blocked on them.
-4. **B4 → B1 → B2** — the chat quality chain, in dependency order.
-5. **C1** — integration testing, once the surface has stopped moving.
-6. **F1, F2, F3** — correctness risks.
-7. **D1, D2** — content, which is the moat but only once the vehicle is sound.
+~~1. **A2, A4** — small, no decisions needed, immediately reduce harm.~~ Done.
+~~2. **C2** — write and run the manual script; it will find bugs the audit could not.~~ Done.
+~~3. **Q1, Q2, Q3** — decide, since A1, A3 and A5 are all blocked on them.~~ Decided and implemented.
+~~4. **B4 → B1 → B2** — the chat quality chain, in dependency order.~~ Done.
+~~5. **C1** — integration testing, once the surface has stopped moving.~~ Done and green on CI.
+6. **F1** — Windows path handling. Needs a Windows machine; nobody here has one.
+7. **D1, D2** — content, which is the moat but only once the vehicle is sound. Done for Rust; a
+   second language is the next real test of the extensibility claim.
 8. **E1** whenever the owner is available; it is not blocked by anything technical.
+
+**What is left, honestly.** Every P0 is closed. The remaining work is either blocked on someone with
+credentials (E1, E2 — release and Marketplace), blocked on hardware (F1 — Windows), or speculative
+(Q4 caching, D3, E3). The next genuinely useful thing is a second language pack, because that is the
+only way to find out whether the editor-agnostic core is actually editor-agnostic.

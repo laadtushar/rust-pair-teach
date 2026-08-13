@@ -32,6 +32,19 @@ export interface ChatContext {
   noWorkspace?: boolean;
 }
 
+/**
+ * What happened in the conversation, for the local counters.
+ *
+ * Shapes only — never text. The conversation itself never leaves the machine, and neither does any
+ * fragment of it; what gets counted is that a thing of a certain kind occurred.
+ */
+export type ChatTelemetryEvent =
+  | { kind: 'learner_message' }
+  | { kind: 'proactive'; reason: ProactiveReason }
+  | { kind: 'redacted' }
+  | { kind: 'provider_error'; error: string }
+  | { kind: 'cancelled' };
+
 /** Why the tutor is about to speak unprompted. */
 export type ProactiveReason =
   | 'session_start'

@@ -1,4 +1,4 @@
-import type { Message } from '../lesson/prompt.js';
+import type { Message } from '../provider/types.js';
 import type { ChatContext, ChatMessage, ProactiveReason } from './types.js';
 
 /** How many turns of history travel with each request. */

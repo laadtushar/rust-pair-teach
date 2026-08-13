@@ -20,17 +20,16 @@ suite('activation', () => {
 
   test('every contributed command is actually registered', async () => {
     // A command in package.json with no registerCommand is a menu entry that throws when clicked.
+    // The list is read from the manifest rather than restated here, so adding a command cannot
+    // quietly escape this check.
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext);
+    const contributed = (
+      ext.packageJSON as { contributes: { commands: Array<{ command: string }> } }
+    ).contributes.commands.map((c) => c.command);
+    assert.ok(contributed.length > 0, 'the manifest contributes no commands at all');
+
     const registered = await vscode.commands.getCommands(true);
-    const contributed = [
-      'rustPairTeacher.chat',
-      'rustPairTeacher.startCourse',
-      'rustPairTeacher.setupModel',
-      'rustPairTeacher.openCandidateLog',
-      'rustPairTeacher.toggleAmbient',
-      'rustPairTeacher.teachMe',
-      'rustPairTeacher.setApiKey',
-      'rustPairTeacher.showTelemetry',
-    ];
     const missing = contributed.filter((c) => !registered.includes(c));
     assert.deepStrictEqual(missing, [], `unregistered: ${missing.join(', ')}`);
   });
@@ -71,6 +70,19 @@ suite('activation', () => {
     await vscode.commands.executeCommand('rustPairTeacher.showTelemetry');
     await vscode.commands.executeCommand('rustPairTeacher.teachMe');
     await vscode.commands.executeCommand('rustPairTeacher.chat');
+    await vscode.commands.executeCommand('rustPairTeacher.showEgress');
+  });
+
+  test('the egress command shows the real payload, not a placeholder', async () => {
+    // The privacy claim is only as good as this document. If it opens empty, the promise that you
+    // can check what leaves your machine is worthless.
+    await vscode.commands.executeCommand('rustPairTeacher.showEgress');
+    const shown = vscode.window.activeTextEditor?.document.getText() ?? '';
+    assert.ok(shown.includes('--- system ---'), `egress document had no system turn:\n${shown}`);
+    assert.ok(
+      shown.includes('do not write their code'),
+      'the persona is what guarantees the no-code rule; it must be visible in the payload'
+    );
   });
 
   test('the course is available from the command palette', async () => {

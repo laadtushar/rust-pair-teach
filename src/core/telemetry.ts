@@ -1,3 +1,4 @@
+import type { ChatTelemetryEvent } from './chat/types.js';
 import type { HintLevel } from './lesson/staticHint.js';
 import type { Resolution } from './learner/types.js';
 import type { SuppressionReason } from './types.js';
@@ -26,6 +27,14 @@ export interface TelemetrySnapshot {
   ambientDisabledCount: number;
   ambientEnabledCount: number;
   conceptsTaught: Record<string, number>;
+  /** Turns the learner typed. The other half of "is anyone talking back?" */
+  chatMessagesSent: number;
+  /** Unprompted tutor remarks, by why it spoke. */
+  proactiveNudges: Record<string, number>;
+  /** Replies the tutor stopped mid-sentence. */
+  chatCancelled: number;
+  /** Provider failures by kind — never the message, which can quote the request. */
+  providerErrors: Record<string, number>;
 }
 
 export class Telemetry {
@@ -48,7 +57,39 @@ export class Telemetry {
       ambientDisabledCount: 0,
       ambientEnabledCount: 0,
       conceptsTaught: {},
+      chatMessagesSent: 0,
+      proactiveNudges: {},
+      chatCancelled: 0,
+      providerErrors: {},
     };
+  }
+
+  /**
+   * Fold a conversation event into the counters (A5).
+   *
+   * A redacted reply is counted as a refusal, not as its own statistic: it is the same event the
+   * hint ladder called `hintRefused` — a model trying to hand over the answer and being stopped —
+   * and splitting it in two would make the reading harder to interpret, not richer.
+   */
+  chatEvent(event: ChatTelemetryEvent): void {
+    if (!this.enabled) return;
+    switch (event.kind) {
+      case 'learner_message':
+        this.snap.chatMessagesSent++;
+        return;
+      case 'proactive':
+        this.snap.proactiveNudges[event.reason] = (this.snap.proactiveNudges[event.reason] ?? 0) + 1;
+        return;
+      case 'redacted':
+        this.snap.hintsRefused++;
+        return;
+      case 'cancelled':
+        this.snap.chatCancelled++;
+        return;
+      case 'provider_error':
+        this.snap.providerErrors[event.error] = (this.snap.providerErrors[event.error] ?? 0) + 1;
+        return;
+    }
   }
 
   momentFired(): void {
@@ -103,11 +144,21 @@ export interface ValidationReading {
   ambient: { verdict: Verdict; dismissRate: number | null; sample: number };
   /** Stage-1 question 2: does the learner reach for the tutor deliberately? */
   deliberateUse: { onDemandShare: number | null; sample: number };
+  /**
+   * Stage-1 question 3, new with the chat pivot: is this a conversation or a monologue?
+   *
+   * A tutor that speaks unprompted and is never answered is the same failure as a noisy hint —
+   * it just fails somewhere the old counters could not see.
+   */
+  conversation: { verdict: Verdict; repliesPerNudge: number | null; sample: number };
   notes: string[];
 }
 
 const MIN_SAMPLE = 20;
 const NOISY_DISMISS_RATE = 0.5;
+/** Below this, the learner is being talked at rather than talked with. */
+const QUIET_REPLIES_PER_NUDGE = 0.25;
+const MIN_NUDGE_SAMPLE = 10;
 
 /**
  * Read the instrument.
@@ -152,9 +203,37 @@ export function interpret(snap: TelemetrySnapshot): ValidationReading {
     );
   }
 
+  const nudges = Object.values(snap.proactiveNudges).reduce((a, b) => a + b, 0);
+  const repliesPerNudge = nudges > 0 ? snap.chatMessagesSent / nudges : null;
+  let conversationVerdict: Verdict = 'insufficient_data';
+  if (nudges >= MIN_NUDGE_SAMPLE && repliesPerNudge !== null) {
+    conversationVerdict = repliesPerNudge < QUIET_REPLIES_PER_NUDGE ? 'noisy' : 'helpful';
+    if (conversationVerdict === 'noisy') {
+      notes.push(
+        `The tutor spoke unprompted ${String(nudges)} time(s) and got ${String(snap.chatMessagesSent)} repl(ies) — it is monologuing.`
+      );
+    }
+  } else {
+    notes.push(
+      `Only ${String(nudges)} unprompted remark(s) — need ${String(MIN_NUDGE_SAMPLE)} to read the conversation.`
+    );
+  }
+
+  const failures = Object.entries(snap.providerErrors);
+  if (failures.length > 0) {
+    notes.push(
+      `Provider failures: ${failures.map(([kind, n]) => `${kind} ×${String(n)}`).join(', ')}.`
+    );
+  }
+
   return {
     ambient: { verdict, dismissRate, sample: resolved },
     deliberateUse: { onDemandShare, sample: totalTeaching },
+    conversation: {
+      verdict: conversationVerdict,
+      repliesPerNudge,
+      sample: nudges,
+    },
     notes,
   };
 }

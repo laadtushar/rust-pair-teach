@@ -105,7 +105,7 @@ export class Course {
 
   private stateOf(lesson: Lesson, workspace: WorkspaceView): LessonState {
     const steps = verifySteps(
-      { title: lesson.title, rationale: lesson.goal, steps: lesson.steps.map(toActionStep), scaffolds: [] },
+      { title: lesson.title, rationale: lesson.goal, steps: lesson.steps.map(toActionStep) },
       workspace
     );
     return {

@@ -120,5 +120,70 @@ describe('reading the instrument', () => {
     const reading = interpret(enabled().snapshot());
     expect(reading.ambient.dismissRate).toBeNull();
     expect(reading.deliberateUse.onDemandShare).toBeNull();
+    expect(reading.conversation.repliesPerNudge).toBeNull();
+  });
+});
+
+describe('the conversation counters (A5)', () => {
+  it('counts learner turns and unprompted remarks by reason', () => {
+    const t = enabled();
+    t.chatEvent({ kind: 'learner_message' });
+    t.chatEvent({ kind: 'learner_message' });
+    t.chatEvent({ kind: 'proactive', reason: 'new_error' });
+    t.chatEvent({ kind: 'proactive', reason: 'new_error' });
+    t.chatEvent({ kind: 'proactive', reason: 'session_start' });
+
+    const snap = t.snapshot();
+    expect(snap.chatMessagesSent).toBe(2);
+    expect(snap.proactiveNudges).toEqual({ new_error: 2, session_start: 1 });
+  });
+
+  it('counts a redacted reply as a refusal, not as a separate statistic', () => {
+    // It is the same event the ladder called hintRefused — a model stopped from giving the answer.
+    const t = enabled();
+    t.chatEvent({ kind: 'redacted' });
+    expect(t.snapshot().hintsRefused).toBe(1);
+  });
+
+  it('records the provider failure kind, never its message', () => {
+    const t = enabled();
+    t.chatEvent({ kind: 'provider_error', error: 'auth' });
+    t.chatEvent({ kind: 'provider_error', error: 'timeout' });
+    t.chatEvent({ kind: 'provider_error', error: 'timeout' });
+    expect(t.snapshot().providerErrors).toEqual({ auth: 1, timeout: 2 });
+    expect(interpret(t.snapshot()).notes.join(' ')).toMatch(/timeout ×2/);
+  });
+
+  it('stays inert when telemetry is off', () => {
+    const t = new Telemetry(false, SINCE);
+    t.chatEvent({ kind: 'learner_message' });
+    t.chatEvent({ kind: 'cancelled' });
+    expect(t.snapshot().chatMessagesSent).toBe(0);
+    expect(t.snapshot().chatCancelled).toBe(0);
+  });
+
+  it('calls out a tutor that is monologuing', () => {
+    const t = enabled();
+    for (let i = 0; i < 12; i++) t.chatEvent({ kind: 'proactive', reason: 'step_completed' });
+    t.chatEvent({ kind: 'learner_message' });
+
+    const reading = interpret(t.snapshot());
+    expect(reading.conversation.verdict).toBe('noisy');
+    expect(reading.notes.join(' ')).toMatch(/monologuing/);
+  });
+
+  it('is satisfied when the learner talks back', () => {
+    const t = enabled();
+    for (let i = 0; i < 12; i++) t.chatEvent({ kind: 'proactive', reason: 'step_completed' });
+    for (let i = 0; i < 8; i++) t.chatEvent({ kind: 'learner_message' });
+    expect(interpret(t.snapshot()).conversation.verdict).toBe('helpful');
+  });
+
+  it('refuses to read a conversation that has barely started', () => {
+    const t = enabled();
+    t.chatEvent({ kind: 'proactive', reason: 'session_start' });
+    const reading = interpret(t.snapshot());
+    expect(reading.conversation.verdict).toBe('insufficient_data');
+    expect(reading.notes.join(' ')).toMatch(/need 10 to read the conversation/);
   });
 });

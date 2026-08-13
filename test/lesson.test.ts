@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { checkHintRespectsLadder, checkLevelOneAsks } from '../src/core/lesson/refusal.js';
 import { staticHint } from '../src/core/lesson/staticHint.js';
 import { loadPackFromDisk } from '../src/core/pack/loadFromDisk.js';
 import { indexBySignature } from '../src/core/pack/schema.js';
@@ -25,7 +24,7 @@ describe('offline hints', () => {
   it('asks a question at level 1 and gives away nothing', () => {
     const hint = staticHint(moves, 1);
     expect(hint.text).toContain('?');
-    expect(checkHintRespectsLadder(hint.text, 1).ok).toBe(true);
+    expect(hint.text).not.toMatch(/```/);
   });
 
   it('rotates questions so a repeat encounter is not word-for-word identical', () => {
@@ -69,45 +68,36 @@ describe('offline hints', () => {
   });
 });
 
-describe('ladder refusal invariants', () => {
-  it('rejects a fenced code block at level 1 and 2', () => {
-    const leaked = 'Try this:\n```rust\nlet b = a.clone();\n```';
-    expect(checkHintRespectsLadder(leaked, 1).ok).toBe(false);
-    expect(checkHintRespectsLadder(leaked, 2).ok).toBe(false);
-  });
-
-  it('rejects unfenced solution-shaped code too', () => {
-    // A model that has learned not to use fences has not learned not to give the answer.
-    expect(checkHintRespectsLadder('You want fn fixed(v: &Vec<i32>) -> i32 { 0 }', 2).ok).toBe(
-      false
-    );
-    expect(checkHintRespectsLadder('Write let first = items[0].clone(); instead', 1).ok).toBe(
-      false
-    );
-  });
-
-  it('permits code at level 3, which is the worked example', () => {
-    const worked = 'Here is one way:\n```rust\nlet b = a.clone();\n```';
-    expect(checkHintRespectsLadder(worked, 3).ok).toBe(true);
-  });
-
-  it('explains why it refused, so the failure is debuggable', () => {
-    const verdict = checkHintRespectsLadder('```rust\nfoo\n```', 1);
-    expect(verdict.reason).toMatch(/fenced code block/);
-  });
-
-  it('requires level 1 to actually ask something', () => {
-    expect(checkLevelOneAsks('The value moved into the function.').ok).toBe(false);
-    expect(checkLevelOneAsks('Where did the value go?').ok).toBe(true);
-  });
-
-  it('passes every authored level-1 template in pack zero', () => {
-    // The pack is reviewed content, but the guard should still agree with it — if it does not, one
-    // of the two is wrong and it is worth knowing which.
+/**
+ * The bright line, asserted against the content rather than against a guard.
+ *
+ * The ladder's runtime refusal checks went away with the ladder itself — a conversation has no
+ * levels to police, and `limitCodeInReply` is what stands between a model and a copy-pasteable
+ * answer now. What survives is the property those checks existed to protect, checked where it is
+ * actually authored: the pack's opening questions must ask, and must not answer.
+ */
+describe('authored pack content keeps the promise', () => {
+  it('opens every concept with a question', () => {
     for (const concept of pack.concepts) {
       for (const template of concept.socraticTemplates) {
-        expect(checkLevelOneAsks(template).ok, template).toBe(true);
-        expect(checkHintRespectsLadder(template, 1).ok, template).toBe(true);
+        expect(template, template).toContain('?');
+      }
+    }
+  });
+
+  it('gives away no pasteable code in an opening question', () => {
+    // A template that has learned not to use fences has not learned not to give the answer, so
+    // both shapes are checked.
+    const SOLUTION_SHAPED = [
+      /```/,
+      /\bfn\s+\w+\s*\([^)]*\)\s*(->[^{]+)?\{/,
+      /\blet\s+\w+\s*(:[^=]+)?=\s*[^;]+;/,
+    ];
+    for (const concept of pack.concepts) {
+      for (const template of concept.socraticTemplates) {
+        for (const pattern of SOLUTION_SHAPED) {
+          expect(pattern.test(template), `${template} matched ${String(pattern)}`).toBe(false);
+        }
       }
     }
   });

@@ -1,7 +1,12 @@
-import type { ProviderAdapter } from '../provider/types.js';
+import { ProviderError, type ProviderAdapter } from '../provider/types.js';
 import type { SpendGuard } from '../spend.js';
 import { fitChatPrompt, limitCodeInReply, maskIncompleteFence } from './prompt.js';
-import type { ChatContext, ChatMessage, ProactiveReason } from './types.js';
+import type {
+  ChatContext,
+  ChatMessage,
+  ChatTelemetryEvent,
+  ProactiveReason,
+} from './types.js';
 
 /**
  * Where the conversation is kept between sessions.
@@ -38,6 +43,13 @@ export interface TutorChatOptions {
   maxPromptChars?: number;
   /** Daily call ceiling (B3). Omit to leave the conversation unbounded. */
   spend?: SpendGuard;
+  /**
+   * Counters for the local telemetry snapshot (A5).
+   *
+   * The conversation is the product now, so it is also where the evidence is. Without these, the
+   * only measurable teaching is the hint path that no longer exists.
+   */
+  onTelemetry?: (event: ChatTelemetryEvent) => void;
 }
 
 /** Kept small enough to load instantly and large enough to hold a real session. */
@@ -87,7 +99,9 @@ export class TutorChat {
 
   /** Abort whatever the tutor is saying. Leaves the history consistent. */
   cancel(): void {
-    this.inFlight?.abort();
+    if (!this.inFlight) return;
+    this.inFlight.abort();
+    this.opts.onTelemetry?.({ kind: 'cancelled' });
   }
 
   /** Drop the conversation but keep the configuration. */
@@ -98,12 +112,29 @@ export class TutorChat {
     this.opts.onChanged?.(this.history);
   }
 
+  /**
+   * Put words in the tutor's mouth that no model produced.
+   *
+   * This is how the packs reach the learner when nothing is connected (Q2). Routing pack teaching
+   * through the same thread rather than a second panel means there is exactly one place to look for
+   * what the tutor has to say, whether or not a model is answering.
+   *
+   * It is not a nudge: no dedupe, no interval, no provider. The caller has already decided this
+   * should be said.
+   */
+  addTutorMessage(text: string, now: number): void {
+    const trimmed = text.trim();
+    if (trimmed === '') return;
+    this.push({ speaker: 'tutor', text: trimmed, at: now, proactive: true });
+  }
+
   /** The learner typed something. */
   async say(text: string, ctx: ChatContext, now: number): Promise<void> {
     const trimmed = text.trim();
     if (trimmed === '') return;
 
     this.push({ speaker: 'learner', text: trimmed, at: now });
+    this.opts.onTelemetry?.({ kind: 'learner_message' });
     await this.respond(ctx, now, undefined);
   }
 
@@ -128,6 +159,7 @@ export class TutorChat {
 
     this.lastProactive = { reason, key };
     this.lastProactiveAt = now;
+    this.opts.onTelemetry?.({ kind: 'proactive', reason });
     await this.respond(ctx, now, reason);
   }
 
@@ -203,6 +235,8 @@ export class TutorChat {
           ? { text: completion.text, redacted: false }
           : limitCodeInReply(completion.text);
 
+      if (reply.redacted) this.opts.onTelemetry?.({ kind: 'redacted' });
+
       const text = reply.text.trim();
 
       if (streaming) {
@@ -224,7 +258,14 @@ export class TutorChat {
       // Drop any partial reply; half a sentence attributed to the tutor is worse than none.
       if (streaming) this.history = this.history.filter((m) => m !== streaming);
       // A cancellation is the learner getting what they asked for, not a failure to report.
-      if (!controller.signal.aborted) this.opts.onError?.(String(err));
+      if (!controller.signal.aborted) {
+        this.opts.onTelemetry?.({
+          kind: 'provider_error',
+          // The classification, not the message: a provider's error text can quote the request.
+          error: err instanceof ProviderError ? err.kind : 'unknown',
+        });
+        this.opts.onError?.(String(err));
+      }
     } finally {
       this.busy = false;
       this.inFlight = null;

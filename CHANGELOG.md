@@ -3,6 +3,28 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.12.0 — one tutor, not two
+
+Until now the extension had two personalities. Connect a model and you got a conversation; connect
+nothing and you got a card with three hint buttons. Which tutor you met depended on a setting you
+had not made yet, and only one of them was the one described on the box.
+
+There is one tutor now, and it talks. When no model is connected it still talks — the built-in
+material arrives as something it says to you, in the same conversation, rather than as a different
+panel with different buttons. Nothing about the teaching is lost; the second interface is.
+
+**Also**
+
+- The tutor now notices when you fix something. Clearing an error it never mentioned counts for more
+  than clearing one it talked you through, because doing it alone is the stronger evidence — and it
+  sees both, where before it only saw the times you clicked "I solved it".
+- Closing the window on a problem you did not solve is recorded too. Giving up used to look
+  identical to never having struggled.
+- **Rust Pair Teacher: Show what gets sent to the model** opens the exact text that would leave your
+  machine, before it leaves. The claim was in the README; now you can check it.
+- Your telemetry — still off by default, still local — can tell you whether the tutor is holding a
+  conversation or talking to itself.
+
 ## 0.9.0 — the course now goes somewhere
 
 Sixteen lessons instead of eight, ending on a program you built rather than an exercise you

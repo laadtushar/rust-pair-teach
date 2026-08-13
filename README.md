@@ -3,7 +3,7 @@
 **The anti-Copilot for learning Rust — it refuses to write your code.**
 
 An open source, editor-native AI tutor (VS Code extension) that watches free-form Rust code as you
-write it, detects teachable moments, and teaches with tiered hints instead of autocompleting.
+write it, notices when you are stuck, and talks with you about it instead of autocompleting.
 Working name: **BorrowSensei** (placeholder).
 
 > Status: **working, unproven.** It talks, teaches a sixteen-lesson course, and remembers what you
@@ -80,13 +80,15 @@ The full diagram, data model, prompting contract, and heuristics live in
    failure mode.
 5. **Content is data, never code.** Teaching ships as versioned chapter packs (declarative, schema
    validated, no executable hooks) so new pedagogy never requires a new extension release.
-6. **Privacy by default.** The learner model stays local; only a two-line summary ever travels.
+6. **Privacy by default.** The learner model stays local; only a two-line summary ever travels, and
+   **Show what gets sent to the model** prints the exact payload so the claim is checkable rather
+   than trusted.
 
 ## Try it
 
 ```bash
 npm install
-npm run verify     # typecheck, lint, 258 tests
+npm run verify     # typecheck, lint, 234 tests
 npm run build      # bundle
 npm run package    # .vsix you can install
 ```
@@ -99,9 +101,13 @@ model** and pick Ollama — free, local, no key, and nothing leaves your machine
 keychain, never to `settings.json`. A ChatGPT or Claude subscription is *not* API access and the
 extension will tell you so rather than failing with a bare 401.
 
+**Conversation without a model.** With nothing configured the tutor still teaches — the chapter
+packs' own material arrives as tutor messages in the same conversation. There is no second panel
+and no separate mode; what changes is who is writing, not where you look.
+
 Useful commands: **Start learning Rust**, **Explain what I'm stuck on** (bypasses every cooldown),
-**Open candidate log** (every decision it made, including the ones to stay quiet), **Show my
-learning telemetry**.
+**Show what gets sent to the model** (the exact text, before it leaves), **Open candidate log**
+(every decision it made, including the ones to stay quiet), **Show my learning telemetry**.
 
 To check a model actually follows the teaching persona:
 
@@ -117,14 +123,15 @@ npm run conformance
 2. ~~Diagnostics reader + Moment Detector with logging, no LLM yet.~~
 3. ~~Chapter-pack format, concept content for the seven core borrow-checker codes, Lesson Engine,
    provider adapter, sidebar.~~
-4. ~~Learner model, hint ladder, resolution tracking, scaffold fading.~~
+4. ~~Learner model, resolution tracking, scaffold fading.~~
 5. ~~Conversational tutor, sixteen-lesson course, streaming, spend cap.~~
-6. **← here.** Use it. Tune the thresholds against a real candidate log, then recruit 20–50 Rust
-   learners and answer the two validation questions: do ambient interruptions feel helpful or noisy,
-   and does concept tracking change what people study?
-7. Whatever the answers demand. Remaining engineering is tracked in
-   [`docs/BACKLOG.md`](docs/BACKLOG.md), including six questions that need a decision before the
-   work behind them can start.
+6. ~~One teaching surface: the hint card and the ladder engine behind it are gone, and the built-in
+   material is delivered into the conversation instead.~~
+7. **← here.** Use it. Tune the thresholds against a real candidate log, then recruit 20–50 Rust
+   learners and answer the validation questions: do ambient interruptions feel helpful or noisy,
+   does concept tracking change what people study, and does anyone talk back?
+8. Whatever the answers demand. Remaining engineering is tracked in
+   [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 ## Documentation
 

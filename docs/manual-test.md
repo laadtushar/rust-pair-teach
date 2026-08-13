@@ -38,6 +38,16 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 3. **Expect:** the chat panel, with a message saying a model is needed and a *Connect a model* button.
 4. **Expect:** the composer is disabled — you cannot type into a tutor that cannot answer.
 
+**M3. It still teaches with no model** *(A3)*
+1. With nothing configured, open a Rust file and write a borrow conflict — e.g. take `&v[0]`, then
+   `v.push(...)`. Wait for `rustc`/rust-analyzer to report it and leave it alone for ~20 seconds.
+2. **Expect:** a tutor message arrives *in the conversation* — a question about the error drawn from
+   the chapter pack, ending with `rustc --explain E0502`.
+3. **Expect:** no second panel, no hint card, no *Another nudge* / *I solved it* buttons. There is
+   one surface whether or not a model is connected; only the author of the words changes.
+4. Fix the error.
+5. **Expect:** nothing asks whether you solved it. The compiler already said so.
+
 **M2. Lessons are reachable without a model**
 1. Click *Lessons*.
 2. **Expect:** sixteen lessons listed, all unticked, progress bar at 0.
@@ -181,6 +191,12 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 2. Ask the tutor a question.
 3. **Expect:** it does not know about `SECRET_MARKER`. Only the region around the cursor travels.
 
+**P1b. And you can read it** *(A3)*
+1. Run *Show what gets sent to the model*.
+2. **Expect:** a markdown document containing `--- system ---`, the persona, the lesson and steps if
+   one is open, and the region around your cursor — and *not* `SECRET_MARKER` from P1.
+3. With no model configured, **expect:** the header says nothing is sent, and shows what would be.
+
 **P2. Telemetry is off by default**
 1. Run *Show my learning telemetry* without enabling it.
 2. **Expect:** told it is off, not an empty report.
@@ -204,7 +220,11 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 
 1. **L4 command steps** — terminal shell integration is not universal; unproven on any shell.
 2. **Everything in C** — the chat UI has never rendered in a real webview. The integration suite
-   covers activation and contributions, not rendering, so this stays manual-only.
+   covers activation, contributions and the egress document's contents, not rendering, so this
+   stays manual-only.
+2b. **M3, the offline teaching path** — the code is unit-tested end to end
+   (`session.offlineTeaching` → `chat.addTutorMessage`), but no human has watched a pack hint
+   arrive in the thread.
 3. ~~**S1.4 pack loading**~~ — verified 2026-08-11: the paths are present in the `.vsix` at the
    location `loadPackFromDisk` expects. Runtime resolution itself is still untested, but the files
    are demonstrably where the code looks for them.

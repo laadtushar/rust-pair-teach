@@ -1,4 +1,17 @@
-import type { Message } from '../lesson/prompt.js';
+export interface Message {
+  role: 'system' | 'user';
+  content: string;
+}
+
+/**
+ * Exactly what would be sent, for the learner to inspect before or after it goes.
+ *
+ * "Visible and controllable" (N3) is unverifiable if the only way to see the payload is a network
+ * capture, so this is surfaced through a command rather than left as an intention.
+ */
+export function describeEgress(messages: readonly Message[]): string {
+  return messages.map((m) => `--- ${m.role} ---\n${m.content}`).join('\n\n');
+}
 
 export interface CompletionOptions {
   model: string;

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildChatPrompt, fitChatPrompt, limitCodeInReply } from '../src/core/chat/prompt.js';
 import { MAX_STORED_MESSAGES, TutorChat } from '../src/core/chat/tutorChat.js';
-import type { ChatContext, ChatMessage } from '../src/core/chat/types.js';
-import { ProviderError, type ProviderAdapter } from '../src/core/provider/types.js';
+import type { ChatContext, ChatMessage, ChatTelemetryEvent } from '../src/core/chat/types.js';
+import { describeEgress, ProviderError, type ProviderAdapter } from '../src/core/provider/types.js';
 
 const CTX: ChatContext = {
   lessonTitle: 'Lending things out',
@@ -28,6 +28,22 @@ function provider(reply: string | (() => Promise<never>)): ProviderAdapter {
 function chat(p: ProviderAdapter | undefined, extra: Partial<ConstructorParameters<typeof TutorChat>[0]> = {}) {
   return new TutorChat({ model: 'm', ...(p ? { provider: p } : {}), ...extra });
 }
+
+describe('what actually leaves the machine', () => {
+  it('matches the reviewed snapshot', () => {
+    // This snapshot IS the privacy review. Widening what travels — the whole file instead of the
+    // region around the cursor, learner history instead of the two-line summary — shows up here as
+    // a diff a human has to approve before it can ship.
+    expect(describeEgress(buildChatPrompt([], CTX))).toMatchSnapshot();
+  });
+
+  it('never sends the learner model itself, only a summary', () => {
+    const text = describeEgress(buildChatPrompt([], CTX));
+    expect(text).toContain('Met borrows twice, still shaky.');
+    expect(text).not.toContain('episodes');
+    expect(text).not.toContain('unresolvedStreak');
+  });
+});
 
 describe('what the tutor can see', () => {
   it('carries the lesson, the steps and what is still undone', () => {
@@ -274,6 +290,69 @@ describe('cancellation (B2)', () => {
 
   it('is harmless when nothing is in flight', () => {
     expect(() => chat(provider('x')).cancel()).not.toThrow();
+  });
+});
+
+describe('conversation counters (A5)', () => {
+  function counted(p: ProviderAdapter | undefined, extra = {}) {
+    const events: ChatTelemetryEvent[] = [];
+    return { c: chat(p, { onTelemetry: (e) => events.push(e), ...extra }), events };
+  }
+
+  it('reports a learner turn and the reason the tutor spoke first', async () => {
+    const { c, events } = counted(provider('ok'));
+    await c.say('hello', CTX, 1);
+    await c.nudge('new_error', 'E0502', CTX, 100_000);
+    expect(events).toEqual([
+      { kind: 'learner_message' },
+      { kind: 'proactive', reason: 'new_error' },
+    ]);
+  });
+
+  it('does not report a nudge that was throttled away', async () => {
+    const { c, events } = counted(provider('ok'), { minProactiveIntervalMs: 20_000 });
+    await c.nudge('new_error', 'a', CTX, 1);
+    await c.nudge('new_error', 'b', CTX, 2);
+    expect(events.filter((e) => e.kind === 'proactive')).toHaveLength(1);
+  });
+
+  it('reports a reply that had to be redacted', async () => {
+    const answer = '```rust\nlet a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\n```';
+    const { c, events } = counted(provider(answer));
+    await c.say('just tell me', CTX, 1);
+    expect(events).toContainEqual({ kind: 'redacted' });
+  });
+
+  it('reports the provider failure kind rather than its message', async () => {
+    const { c, events } = counted(
+      provider(() => Promise.reject(new ProviderError('502 from https://host/v1', 'network')))
+    );
+    await c.say('hi', CTX, 1);
+    expect(events).toContainEqual({ kind: 'provider_error', error: 'network' });
+    // The URL and the body stay out of the counters entirely.
+    expect(JSON.stringify(events)).not.toContain('host');
+  });
+
+  it('reports a cancellation, but not the failure it causes', async () => {
+    const { c, events } = counted({
+      id: 'slow',
+      complete: (_m, opts) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    });
+    const pending = c.say('never mind', CTX, 1);
+    c.cancel();
+    await pending;
+
+    expect(events).toContainEqual({ kind: 'cancelled' });
+    expect(events.some((e) => e.kind === 'provider_error')).toBe(false);
+  });
+
+  it('says nothing about a cancel with nothing in flight', () => {
+    const { c, events } = counted(provider('ok'));
+    c.cancel();
+    expect(events).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Message } from '../lesson/prompt.js';
+import type { Message } from './types.js';
 import {
   ProviderError,
   type Completion,

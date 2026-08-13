@@ -1,12 +1,9 @@
 import * as vscode from 'vscode';
 
 import type { ChatMessage } from '../core/chat/types.js';
-import type { CourseMenuView, CourseView, LessonView } from '../core/viewModel.js';
+import type { CourseMenuView } from '../core/viewModel.js';
 
 export type SidebarAction =
-  | { type: 'escalate' }
-  | { type: 'solved' }
-  | { type: 'dismissed' }
   | { type: 'teach_me' }
   | { type: 'start_course' }
   | { type: 'open_lesson'; lessonId: string }
@@ -19,8 +16,6 @@ export type SidebarAction =
 
 export type SidebarState =
   | { kind: 'menu'; view: CourseMenuView }
-  | { kind: 'course'; view: CourseView }
-  | { kind: 'hint'; view: LessonView }
   | {
       kind: 'chat';
       messages: readonly ChatMessage[];
@@ -110,21 +105,9 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
   h2 { font-size: 1.1em; margin: 0 0 4px; }
   .position, .goal { color: var(--vscode-descriptionForeground); font-size: 0.88em; }
   .goal { margin: 0 0 14px; }
-  .body p { margin: 0 0 10px; }
-  .body pre { background: var(--vscode-textCodeBlock-background); padding: 8px 10px;
-              border-radius: 3px; overflow-x: auto; }
+  pre { background: var(--vscode-textCodeBlock-background); padding: 8px 10px;
+        border-radius: 3px; overflow-x: auto; white-space: pre-wrap; }
   code { background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 2px; }
-  ol.steps { list-style: none; padding: 0; margin: 16px 0 0; }
-  ol.steps li { display: flex; gap: 8px; margin: 0 0 12px; align-items: flex-start; }
-  .box { flex: 0 0 auto; width: 1.15em; }
-  .done .txt { color: var(--vscode-descriptionForeground); text-decoration: line-through; }
-  .hint { display: block; margin-top: 4px; font-size: 0.88em;
-          color: var(--vscode-descriptionForeground); }
-  .rung { border-left: 2px solid var(--vscode-textLink-foreground); padding-left: 10px;
-          margin: 0 0 14px; }
-  .level { font-size: 0.75em; text-transform: uppercase; letter-spacing: .06em;
-           color: var(--vscode-descriptionForeground); margin-bottom: 4px; }
-  .text { white-space: pre-wrap; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
   button { font-family: inherit; font-size: inherit; padding: 6px 13px; border: none;
            border-radius: 2px; cursor: pointer;
@@ -228,10 +211,6 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
     switch (this.state.kind) {
       case 'menu':
         return this.menuHtml(this.state.view);
-      case 'course':
-        return this.courseHtml(this.state.view);
-      case 'hint':
-        return this.hintHtml(this.state.view);
       case 'chat':
         return this.chatHtml(this.state);
     }
@@ -273,30 +252,6 @@ export class TutorSidebar implements vscode.WebviewViewProvider {
 ${setup}`;
   }
 
-  private courseHtml(view: CourseView): string {
-    const steps = view.steps
-      .map(
-        (s) => `<li class="${s.done ? 'done' : ''}">
-        <span class="box">${s.done ? '✓' : '○'}</span>
-        <span class="txt">${escapeHtml(s.instruction)}
-          ${s.hint ? `<span class="hint">${escapeHtml(s.hint)}</span>` : ''}
-        </span>
-      </li>`
-      )
-      .join('\n');
-
-    return `<p class="position">${escapeHtml(view.position)}</p>
-<h2>${escapeHtml(view.lessonTitle)}</h2>
-<p class="goal">${escapeHtml(view.goal)}</p>
-<div class="body">${renderMarkdown(view.body)}</div>
-<ol class="steps">${steps}</ol>
-<div class="actions">
-  <button data-action="complete_lesson">${escapeHtml(view.nextLabel ?? 'Done')}</button>
-  <button class="secondary" data-action="show_menu">All lessons</button>
-</div>
-${view.ready ? '' : '<p class="note">Steps tick themselves as you go. You can continue anyway if you have done the work — the checks are hints, not a gate.</p>'}`;
-  }
-
   private chatHtml(state: Extract<SidebarState, { kind: 'chat' }>): string {
     const bubbles = state.messages
       .map(
@@ -319,31 +274,6 @@ ${view.ready ? '' : '<p class="note">Steps tick themselves as you go. You can co
   ${state.error ? `<div class="err">${escapeHtml(state.error)}</div>` : ''}
 </div>
 `;
-  }
-
-  private hintHtml(view: LessonView): string {
-    const rungs = view.hints
-      .map(
-        (h) => `<div class="rung">
-        <div class="level">Hint ${String(h.level)} of 3</div>
-        <div class="text">${escapeHtml(h.text)}</div>
-      </div>`
-      )
-      .join('\n');
-
-    const next = view.nextStep
-      ? `<button data-action="escalate">${escapeHtml(view.nextStep)}</button>`
-      : '';
-
-    return `<h2>${escapeHtml(view.conceptTitle)}</h2>
-${rungs}
-<div class="actions">
-  ${next}
-  <button class="secondary" data-action="solved">I solved it</button>
-  <button class="secondary" data-action="dismissed">Not now</button>
-</div>
-${view.explainCommand ? `<p class="note">The compiler can explain this one itself: <code>${escapeHtml(view.explainCommand)}</code></p>` : ''}
-${view.offlineNotice ? `<p class="note">${escapeHtml(view.offlineNotice)}</p>` : ''}`;
   }
 }
 

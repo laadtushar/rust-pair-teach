@@ -2,41 +2,21 @@ import { fileURLToPath } from 'node:url';
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { LessonEngine } from '../src/core/lesson/engine.js';
 import { newModel, recordEpisode, teachingPosture } from '../src/core/learner/model.js';
 import type { LearnerModel, Resolution } from '../src/core/learner/types.js';
 import { loadPackFromDisk } from '../src/core/pack/loadFromDisk.js';
 import { indexBySignature } from '../src/core/pack/schema.js';
 import type { ConceptEntry } from '../src/core/pack/types.js';
 import { TutorSession } from '../src/core/session.js';
-import type { CandidateDecision, DiagnosticSignature } from '../src/core/types.js';
+import type { DiagnosticSignature } from '../src/core/types.js';
 
 const PACK_DIR = fileURLToPath(new URL('../packs/rust-borrow-basics', import.meta.url));
 const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 const DAY = 86_400_000;
+const CONCEPT = 'rust/borrows.conflicting';
 
 const E0502: DiagnosticSignature = { kind: 'code', language: 'rust', value: 'E0502' };
 const UNKNOWN: DiagnosticSignature = { kind: 'code', language: 'rust', value: 'E9999' };
-
-const DOC = `fn tally(items: &mut Vec<i32>) {
-    let first = &items[0];
-    items.push(*first);
-}
-`;
-
-// null, not undefined: passing `undefined` to a defaulted parameter silently uses the default,
-// so the no-signature case would never actually be exercised.
-function decision(signature: DiagnosticSignature | null = E0502): CandidateDecision {
-  return {
-    at: T0,
-    kind: 'lingering_diagnostic',
-    uri: 'file:///p/src/lib.rs',
-    ...(signature ? { signature } : {}),
-    startLine: 1,
-    fired: true,
-    reason: 'test',
-  };
-}
 
 let index: Map<string, ConceptEntry>;
 let concept: ConceptEntry;
@@ -50,8 +30,6 @@ beforeEach(async () => {
 function session(model: LearnerModel = newModel(T0)) {
   let latest = model;
   const s = new TutorSession({
-    // No provider: hints come from the pack, which keeps these tests about orchestration.
-    engine: new LessonEngine({ model: 'none' }),
     conceptIndex: index,
     model,
     onModelChanged: (m) => (latest = m),
@@ -77,177 +55,158 @@ function withScore(resolutions: Resolution[]): LearnerModel {
   );
 }
 
-describe('offering a lesson', () => {
-  it('teaches a known signature at level 1 for a struggling learner', async () => {
+describe('mapping an error to a concept', () => {
+  it('finds the concept that teaches a known signature', () => {
     const { s } = session();
-    const out = await s.offer(decision(), DOC, T0);
-
-    expect(out.kind).toBe('offered');
-    if (out.kind !== 'offered') return;
-    expect(out.lesson.concept.id).toBe('rust/borrows.conflicting');
-    expect(out.lesson.level).toBe(1);
-    expect(out.lesson.hints[0]!.text).toContain('?');
+    expect(s.conceptFor(E0502)?.id).toBe(CONCEPT);
   });
 
-  it('says nothing about an error no pack teaches', async () => {
-    // Silence is correct here — inventing a lesson for an unmapped code is how grounding is lost.
+  it('finds nothing for an error no pack teaches', () => {
+    // Silence is correct here — improvising for an unmapped code is how grounding is lost.
     const { s } = session();
-    expect(await s.offer(decision(UNKNOWN), DOC, T0)).toEqual({
-      kind: 'suppressed',
-      reason: 'no_concept',
-    });
-  });
-
-  it('says nothing when there is no diagnostic to map', async () => {
-    const { s } = session();
-    expect((await s.offer(decision(null), DOC, T0)).kind).toBe('suppressed');
-  });
-
-  it('refuses to stack a second lesson on top of an open one', async () => {
-    const { s } = session();
-    await s.offer(decision(), DOC, T0);
-    expect(await s.offer(decision(), DOC, T0)).toEqual({
-      kind: 'suppressed',
-      reason: 'lesson_in_progress',
-    });
+    expect(s.conceptFor(UNKNOWN)).toBeUndefined();
   });
 });
 
-describe('fading changes what gets taught', () => {
-  it('goes quiet on a mastered concept', async () => {
+describe('fading decides when the tutor speaks first', () => {
+  it('speaks unprompted to a struggling learner', () => {
+    const { s } = session();
+    expect(s.shouldSpeakUnprompted(E0502, T0)).toBe(true);
+  });
+
+  it('goes quiet on a mastered concept', () => {
     const mastered = withScore(Array<Resolution>(8).fill('unaided'));
     expect(teachingPosture(mastered.concepts[concept.id]!.score).graduated).toBe(true);
 
     const { s } = session(mastered);
-    expect(await s.offer(decision(), DOC, T0 + 5 * DAY)).toEqual({
-      kind: 'suppressed',
-      reason: 'graduated',
-    });
+    expect(s.shouldSpeakUnprompted(E0502, T0 + 5 * DAY)).toBe(false);
   });
 
-  it('still answers a mastered concept when the learner asks', async () => {
-    // Fading governs when the teacher speaks unprompted, not whether it will speak at all.
+  it('speaks again once mastery has decayed', () => {
     const mastered = withScore(Array<Resolution>(8).fill('unaided'));
     const { s } = session(mastered);
-    const out = await s.offer(decision(), DOC, T0 + 5 * DAY, { onDemand: true });
-    expect(out.kind).toBe('offered');
+    // Same learner, same concept, six months later.
+    expect(s.shouldSpeakUnprompted(E0502, T0 + 180 * DAY)).toBe(true);
   });
 
-  it('starts a nearly-there learner higher up the ladder', async () => {
+  it('never speaks unprompted about an error no pack teaches', () => {
+    const { s } = session();
+    expect(s.shouldSpeakUnprompted(UNKNOWN, T0)).toBe(false);
+  });
+});
+
+describe('offline teaching', () => {
+  it('draws a question, not an answer, from the pack', () => {
+    const { s } = session();
+    const out = s.offlineTeaching(E0502, T0);
+    expect(out?.concept.id).toBe(CONCEPT);
+    expect(out?.text).toContain('?');
+  });
+
+  it('starts a nearly-there learner further up the ladder', () => {
     const nearly = withScore(['self_level_1', 'unaided', 'unaided']);
     const score = nearly.concepts[concept.id]!.score;
     expect(score).toBeGreaterThanOrEqual(0.75);
     expect(score).toBeLessThan(0.9);
 
-    const { s } = session(nearly);
-    const out = await s.offer(decision(), DOC, T0 + 3 * DAY);
-    expect(out.kind === 'offered' && out.lesson.level).toBe(2);
+    const beginner = session().s.offlineTeaching(E0502, T0)!;
+    const advanced = session(nearly).s.offlineTeaching(E0502, T0 + 3 * DAY)!;
+    expect(advanced.text).not.toBe(beginner.text);
   });
 
-  it('speaks again once mastery has decayed', async () => {
-    const mastered = withScore(Array<Resolution>(8).fill('unaided'));
-    const { s } = session(mastered);
-    // Same learner, same concept, six months later.
-    expect((await s.offer(decision(), DOC, T0 + 180 * DAY)).kind).toBe('offered');
-  });
-});
-
-describe('the ladder', () => {
-  it('climbs one rung at a time and stops at three', async () => {
+  it('points at the compiler explanation when the pack names one', () => {
     const { s } = session();
-    await s.offer(decision(), DOC, T0);
-
-    expect((await s.escalate(DOC, T0))!.level).toBe(2);
-    expect((await s.escalate(DOC, T0))!.level).toBe(3);
-    expect(await s.escalate(DOC, T0)).toBeNull();
+    expect(s.offlineTeaching(E0502, T0)?.text).toContain('rustc --explain E0502');
   });
 
-  it('keeps every rung shown, so the sidebar can show the trail', async () => {
+  it('has nothing to say about an unmapped error', () => {
     const { s } = session();
-    await s.offer(decision(), DOC, T0);
-    await s.escalate(DOC, T0);
-    expect(s.activeLesson!.hints.map((h) => h.level)).toEqual([1, 2]);
-  });
-
-  it('does nothing when nothing is open', async () => {
-    const { s } = session();
-    expect(await s.escalate(DOC, T0)).toBeNull();
+    expect(s.offlineTeaching(UNKNOWN, T0)).toBeNull();
   });
 });
 
 describe('resolution feeds the model', () => {
-  it('credits solving at level 1 more than solving at level 3', async () => {
-    const early = session();
-    await early.s.offer(decision(), DOC, T0);
-    early.s.resolve('solved', T0 + 60_000);
-
-    const late = session();
-    await late.s.offer(decision(), DOC, T0);
-    await late.s.escalate(DOC, T0);
-    await late.s.escalate(DOC, T0);
-    late.s.resolve('solved', T0 + 60_000);
-
-    const earlyScore = early.saved().concepts['rust/borrows.conflicting']!.score;
-    const lateScore = late.saved().concepts['rust/borrows.conflicting']!.score;
-    expect(earlyScore).toBeGreaterThan(lateScore);
-  });
-
-  it('records dismissal as abandoned and starts an unresolved streak', async () => {
+  it('grades a silently-cleared error as unaided — the signal a struggle-only tutor misses', () => {
     const { s, saved } = session();
-    await s.offer(decision(), DOC, T0);
-    s.resolve('dismissed', T0 + 30_000);
-
-    const state = saved().concepts['rust/borrows.conflicting']!;
-    expect(state.unresolvedStreak).toBe(1);
-    expect(saved().episodes[0]!.resolution).toBe('abandoned');
-  });
-
-  it('records how long the struggle lasted', async () => {
-    const { s, saved } = session();
-    await s.offer(decision(), DOC, T0);
-    s.resolve('solved', T0 + 245_000);
-    expect(saved().episodes[0]!.durationSec).toBe(245);
-  });
-
-  it('closes the lesson so the next one can open', async () => {
-    const { s } = session();
-    await s.offer(decision(), DOC, T0);
-    s.resolve('solved', T0);
-    expect(s.activeLesson).toBeNull();
-    expect((await s.offer(decision(), DOC, T0)).kind).toBe('offered');
-  });
-
-  it('records an unaided fix, which is the signal a struggle-only tutor would miss', async () => {
-    const { s, saved } = session();
-    s.noteResolvedUnaided(E0502, T0, T0 + 40_000);
+    expect(s.noteResolved(E0502, 'silent', T0, T0 + 40_000)).toBe('unaided');
 
     const episode = saved().episodes[0]!;
     expect(episode.resolution).toBe('unaided');
     expect(episode.hintLevelReached).toBe(0);
-    expect(saved().concepts['rust/borrows.conflicting']!.score).toBeGreaterThan(0.3);
+    expect(saved().concepts[CONCEPT]!.score).toBeGreaterThan(0.3);
   });
 
-  it('ignores an unaided fix for a concept no pack teaches', () => {
+  it('credits a fix after a conversation, but less', () => {
+    const alone = session();
+    alone.s.noteResolved(E0502, 'silent', T0, T0 + 60_000);
+
+    const helped = session();
+    helped.s.noteResolved(E0502, 'discussed', T0, T0 + 60_000);
+
+    expect(helped.saved().episodes[0]!.resolution).toBe('self_level_2');
+    expect(alone.saved().concepts[CONCEPT]!.score).toBeGreaterThan(
+      helped.saved().concepts[CONCEPT]!.score
+    );
+  });
+
+  it('counts the tutor as involved once it has spoken, whoever reports the clear', () => {
     const { s, saved } = session();
-    s.noteResolvedUnaided(UNKNOWN, T0, T0 + 1_000);
+    s.noteDiscussed(E0502, T0);
+    // The detector saw no teaching, but the session knows better.
+    expect(s.noteResolved(E0502, 'silent', T0, T0 + 10_000)).toBe('self_level_2');
+    expect(saved().episodes[0]!.hintLevelReached).toBe(2);
+  });
+
+  it('records how long the struggle lasted', () => {
+    const { s, saved } = session();
+    s.noteResolved(E0502, 'silent', T0, T0 + 245_000);
+    expect(saved().episodes[0]!.durationSec).toBe(245);
+  });
+
+  it('ignores a resolution for a concept no pack teaches', () => {
+    const { s, saved } = session();
+    expect(s.noteResolved(UNKNOWN, 'silent', T0, T0 + 1_000)).toBeNull();
     expect(saved().episodes).toEqual([]);
   });
+});
 
-  it('does nothing when asked to resolve with no lesson open', () => {
+describe('giving up is also information', () => {
+  it('records an abandoned episode for a concept still open at the end', () => {
     const { s, saved } = session();
-    s.resolve('solved', T0);
+    s.noteDiscussed(E0502, T0);
+    s.noteAbandoned(T0 + 30_000);
+
+    const state = saved().concepts[CONCEPT]!;
+    expect(state.unresolvedStreak).toBe(1);
+    expect(saved().episodes[0]!.resolution).toBe('abandoned');
+    expect(saved().episodes[0]!.durationSec).toBe(30);
+  });
+
+  it('does not double-count a concept that was already resolved', () => {
+    const { s, saved } = session();
+    s.noteDiscussed(E0502, T0);
+    s.noteResolved(E0502, 'discussed', T0, T0 + 10_000);
+    s.noteAbandoned(T0 + 30_000);
+    expect(saved().episodes).toHaveLength(1);
+  });
+
+  it('says nothing when the tutor never engaged', () => {
+    const { s, saved } = session();
+    s.noteAbandoned(T0);
     expect(saved().episodes).toEqual([]);
   });
 });
 
 describe('learner summary reaches the prompt', () => {
-  it('carries prior struggle into the next lesson', async () => {
+  it('carries prior struggle into the next conversation', () => {
     const struggled = withScore(['abandoned', 'abandoned']);
     const { s } = session(struggled);
-    const out = await s.offer(decision(), DOC, T0 + 2 * DAY);
-    // Offline hints ignore the summary, but the request that would go to a model carries it —
-    // asserted here via the model state the session reads.
-    expect(out.kind).toBe('offered');
-    expect(s.model.concepts['rust/borrows.conflicting']!.unresolvedStreak).toBe(2);
+    expect(s.summaryFor(E0502, T0 + 2 * DAY)).toBeTruthy();
+    expect(s.model.concepts[CONCEPT]!.unresolvedStreak).toBe(2);
+  });
+
+  it('has no summary for an unmapped error', () => {
+    const { s } = session();
+    expect(s.summaryFor(UNKNOWN, T0)).toBeUndefined();
   });
 });

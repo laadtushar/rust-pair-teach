@@ -6,23 +6,23 @@ import * as vscode from 'vscode';
 import { defaultConfig, type DetectorConfig } from '../core/config.js';
 import { MomentDetector } from '../core/detector.js';
 import { EditStream } from '../core/editStream.js';
-import { LessonEngine } from '../core/lesson/engine.js';
 import { LearnerStore } from '../core/learner/store.js';
 import { loadPackFromDisk } from '../core/pack/loadFromDisk.js';
 import { indexBySignature } from '../core/pack/schema.js';
 import type { ConceptEntry } from '../core/pack/types.js';
 import { OpenAiCompatibleProvider } from '../core/provider/openaiCompatible.js';
 import { diagnoseCredential, PRESETS, testConnection } from '../core/provider/setup.js';
-import type { ProviderAdapter } from '../core/provider/types.js';
+import { describeEgress, type ProviderAdapter } from '../core/provider/types.js';
 import { describeDecision, formatDecision } from '../core/log.js';
 import { toSignature } from '../core/signature.js';
 import { interpret, Telemetry } from '../core/telemetry.js';
 import { TutorSession } from '../core/session.js';
 import type { DiagnosticObservation } from '../core/types.js';
-import { lessonView, type CourseMenuView } from '../core/viewModel.js';
+import type { CourseMenuView } from '../core/viewModel.js';
 import { Course, emptyProgress, type CourseProgress } from '../core/course.js';
 import type { WorkspaceView } from '../core/action/types.js';
-import { TutorChat } from '../core/chat/tutorChat.js';
+import { fitChatPrompt } from '../core/chat/prompt.js';
+import { DEFAULT_MAX_PROMPT_CHARS, TutorChat } from '../core/chat/tutorChat.js';
 import { DEFAULT_DAILY_CALL_LIMIT, SpendGuard, type SpendState } from '../core/spend.js';
 import type { ChatContext, ChatMessage } from '../core/chat/types.js';
 import { extractRegion } from '../core/lesson/region.js';
@@ -94,10 +94,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // line, and the credential warning firing twice on activation.
   const providerConfig = await providerFromSettings(output, context.secrets);
 
-  const engine = new LessonEngine({
-    ...providerConfig,
-    onDegraded: (reason) => output.appendLine(`[lesson] offline hint — ${reason}`),
-  });
   const spendKey = 'rustPairTeacher.spend';
   const spend = new SpendGuard(
     {
@@ -131,10 +127,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       refreshSidebar();
     },
     onDegraded: (reason) => output.appendLine(`[chat] context trimmed: ${reason}`),
+    onTelemetry: (event) => telemetry.chatEvent(event),
   });
 
   const session = new TutorSession({
-    engine,
     conceptIndex,
     model,
     onModelChanged: (m) => {
@@ -210,10 +206,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     editStream,
     ambient: vscode.workspace.getConfiguration('rustPairTeacher').get('ambient', true),
     onCleared: (cleared, now) => {
-      // Solved with no help at all — the signal a struggle-only tutor never sees.
-      if (!cleared.wasTaught) {
-        session.noteResolvedUnaided(cleared.signature, cleared.firstSeenAt, now);
-      }
+      // The compiler decides something was resolved; what the tutor did decides the credit (A5).
+      const resolution = session.noteResolved(
+        cleared.signature,
+        cleared.wasTaught ? 'discussed' : 'silent',
+        cleared.firstSeenAt,
+        now
+      );
+      if (resolution) telemetry.resolved(resolution);
     },
   });
 
@@ -262,12 +262,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       output.appendLine(describeDecision(decision));
       if (decision.fired) {
         telemetry.momentFired();
-        if (chat.configured && decision.signature) {
-          // In chat mode the tutor raises it in conversation rather than replacing the panel.
-          void chat.nudge('new_error', decision.signature.value, chatContext(), now);
-        } else {
-          void teach(decision.uri, decision, now);
-        }
+        void raise(decision.signature, now);
       } else if (decision.suppressedBy) {
         telemetry.momentSuppressed(decision.suppressedBy);
       }
@@ -276,37 +271,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }, TICK_MS);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
 
-  // ---- actions -------------------------------------------------------------
-  async function teach(
-    uri: string,
-    decision: Parameters<TutorSession['offer']>[0],
+  // ---- actions ---------------------------------------------------------------
+
+  /**
+   * Bring an error into the conversation.
+   *
+   * One path, whether or not a model is configured: with one, the tutor talks about it; without,
+   * the built-in material is delivered into the same panel as a tutor message. There is no second
+   * UI whose appearance depends on configuration (A3).
+   */
+  async function raise(
+    signature: import('../core/types.js').DiagnosticSignature | undefined,
     now: number,
     onDemand = false
   ): Promise<void> {
-    const text = documentText(uri);
-    if (text === null) return;
-
-    const outcome = await session.offer(decision, text, now, { onDemand });
-    if (outcome.kind === 'offered') {
-      const shown = outcome.lesson.hints[outcome.lesson.hints.length - 1]!;
-      telemetry.hintShown(shown.level, outcome.lesson.concept.id, shown.offline);
-      sidebar.show({ kind: 'hint', view: lessonView(outcome.lesson) });
-      // A gentle pull, never a modal — the sidebar is the teaching surface, not a popup.
-      await vscode.commands.executeCommand('setContext', 'rustPairTeacher.hasLesson', true);
-    } else {
-      output.appendLine(`[lesson] not offered: ${outcome.reason}`);
+    if (!signature) return;
+    if (!onDemand && !session.shouldSpeakUnprompted(signature, now)) {
+      output.appendLine(`[lesson] not raised: mastered, fading`);
+      return;
     }
+
+    const concept = session.conceptFor(signature);
+    if (!concept) {
+      // Improvising for an unmapped code is how the concept table's grounding gets lost.
+      output.appendLine(`[lesson] no concept teaches ${signature.value}`);
+      return;
+    }
+
+    session.noteDiscussed(signature, now);
+    telemetry.hintShown(1, concept.id, !chat.configured);
+
+    if (chat.configured) {
+      await chat.nudge(onDemand ? 'stuck' : 'new_error', signature.value, chatContext(), now);
+      return;
+    }
+
+    const offline = session.offlineTeaching(signature, now);
+    if (offline) chat.addTutorMessage(offline.text, now);
   }
 
   // ---- sidebar state -------------------------------------------------------
 
-  /**
-   * Render whatever the learner should see now.
-   *
-   * A live hint outranks the course, because it is about the code in front of them. Otherwise the
-   * course shows — never an empty panel. Someone who has written no Rust yet is exactly the person
-   * a "nothing to teach right now" screen fails.
-   */
   /** True while the learner is browsing the lesson list. */
   let showingMenu = false;
 
@@ -397,32 +402,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   async function handleAction(action: SidebarAction): Promise<void> {
     const now = Date.now();
-    const lesson = session.activeLesson;
 
     switch (action.type) {
-      case 'escalate': {
-        if (!lesson) return;
-        const text = documentText(lesson.uri);
-        if (text === null) return;
-        const next = await session.escalate(text, now);
-        if (next) telemetry.hintShown(next.level, lesson.concept.id, next.offline);
-        refreshSidebar();
-        return;
-      }
-
-      case 'solved':
-      case 'dismissed': {
-        if (!lesson) return;
-        telemetry.resolved(
-          action.type === 'solved'
-            ? (`self_level_${String(lesson.level)}` as never)
-            : 'abandoned'
-        );
-        session.resolve(action.type === 'solved' ? 'solved' : 'dismissed', now);
-        refreshSidebar();
-        return;
-      }
-
       case 'teach_me':
         await teachOnDemand(now);
         return;
@@ -507,21 +488,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    await teach(
-      uri.toString(),
-      {
-        at: now,
-        kind: 'lingering_diagnostic',
-        uri: uri.toString(),
-        signature: at.signature,
-        startLine: at.startLine,
-        fired: true,
-        reason: 'requested by the learner',
-      },
-      now,
-      true
-    );
+    await raise(at.signature, now, true);
   }
+
+  // Closing the window on an error the tutor was discussing is a real outcome, and the only one
+  // the model would otherwise never see — every other path records a success.
+  onDeactivate = async () => {
+    session.noteAbandoned(Date.now());
+    await store.save(model).catch((err: unknown) => {
+      output.appendLine(`[learner] final save failed: ${String(err)}`);
+    });
+    await flush();
+  };
 
   refreshSidebar();
   // Speak first. A tutor that waits to be addressed is a search box.
@@ -535,6 +513,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('rustPairTeacher.startCourse', async () => {
       await vscode.commands.executeCommand('rustPairTeacher.lesson.focus');
       await handleAction({ type: 'start_course' });
+    }),
+    // "Nothing leaves your machine except this" is only a claim until you can read it.
+    vscode.commands.registerCommand('rustPairTeacher.showEgress', async () => {
+      const fitted = fitChatPrompt(
+        [...chat.messages],
+        chatContext(),
+        undefined,
+        { maxChars: DEFAULT_MAX_PROMPT_CHARS }
+      );
+      const header = chat.configured
+        ? `# What would be sent to ${vscode.workspace.getConfiguration('rustPairTeacher').get<string>('baseUrl', '')}\n`
+        : '# Nothing is sent — no model is configured.\n# This is what would be sent if one were.\n';
+      const notes = fitted.degradations.length
+        ? `\n# Trimmed to fit: ${fitted.degradations.join('; ')}\n`
+        : '';
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'markdown',
+        content: `${header}${notes}\n${describeEgress(fitted.messages)}\n`,
+      });
+      await vscode.window.showTextDocument(doc, { preview: true });
     }),
     vscode.commands.registerCommand('rustPairTeacher.openCandidateLog', async () => {
       await flush();
@@ -642,13 +641,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 }
 
-export function deactivate(): void {
-  // Everything is disposed through context.subscriptions.
-}
+/**
+ * Set by `activate`, awaited by `deactivate`.
+ *
+ * A closure rather than a disposable because the work is asynchronous — VS Code awaits the promise
+ * `deactivate` returns, but disposables are fire-and-forget, and a learner model written into a
+ * process that is already exiting is a learner model lost.
+ */
+let onDeactivate: (() => Promise<void>) | undefined;
 
-function documentText(uri: string): string | null {
-  const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri);
-  return doc ? doc.getText() : null;
+export async function deactivate(): Promise<void> {
+  // Everything else is disposed through context.subscriptions.
+  await onDeactivate?.();
+  onDeactivate = undefined;
 }
 
 function readConfig(): DetectorConfig {

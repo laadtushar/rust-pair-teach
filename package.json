@@ -1,8 +1,8 @@
 {
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
-  "description": "An editor-native tutor that watches your Rust and teaches with tiered hints instead of writing your code.",
-  "version": "0.11.0",
+  "description": "An editor-native Rust tutor that talks with you while you work, and never writes your code.",
+  "version": "0.12.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -30,6 +30,10 @@
       {
         "command": "rustPairTeacher.setupModel",
         "title": "Rust Pair Teacher: Set up a teaching model"
+      },
+      {
+        "command": "rustPairTeacher.showEgress",
+        "title": "Rust Pair Teacher: Show what gets sent to the model"
       },
       {
         "command": "rustPairTeacher.openCandidateLog",
@@ -78,12 +82,12 @@
         "rustPairTeacher.model": {
           "type": "string",
           "default": "",
-          "description": "Model id to use for hints. Levels 1-2 work on small local models; level 3 worked examples benefit from a stronger one."
+          "description": "Model id the tutor talks with. A small local model is fine for conversation; a stronger one gives better worked examples."
         },
         "rustPairTeacher.telemetry": {
           "type": "boolean",
           "default": false,
-          "description": "Collect local, anonymous counts about how the tutor is working — moments fired, hint levels reached, how often lessons are dismissed. Never leaves your machine, contains no code or file paths, and you can read it with the Show my learning telemetry command."
+          "description": "Collect local, anonymous counts about how the tutor is working — moments fired, how often it speaks first, whether you answer, how often problems get solved. Never leaves your machine, contains no code, file paths or conversation text, and you can read it with the Show my learning telemetry command."
         },
         "rustPairTeacher.strictNoCode": {
           "type": "boolean",
