@@ -6,22 +6,26 @@ An open source, editor-native AI tutor (VS Code extension) that watches free-for
 write it, detects teachable moments, and teaches with tiered hints instead of autocompleting.
 Working name: **BorrowSensei** (placeholder).
 
-> Status: **working, unproven.** The extension watches, detects, teaches, and remembers — but the
-> thresholds that decide *when* it speaks are educated guesses, not measured. It has not yet been
-> used by anyone learning Rust for real, which is the next thing that matters.
+> Status: **working, unproven.** It talks, teaches a sixteen-lesson course, and remembers what you
+> struggled with — but the thresholds that decide *when* it speaks are educated guesses, and it has
+> never been used by anyone learning Rust for real. That, not more features, is what it needs next.
 
 ## What it does
 
-- **Watches** `.rs` edits in real time via VS Code editor APIs (`onDidChangeTextDocument`,
-  `languages.getDiagnostics`) and rust-analyzer diagnostics — no screen capture.
-- **Detects teachable moments** locally: a lingering diagnostic, repeated rewrite churn in one
-  region, idle-after-error, or the first time you ever hit a given error code. Detection never
-  calls an LLM.
-- **Teaches with a hint ladder** — Level 1 Socratic question → Level 2 the error reframed in your
-  own code's terms → Level 3 worked example. Never skips a level without a click, never writes
-  solution code into your buffer.
-- **Tracks concept mastery** over time (ownership, borrows, lifetimes, traits, error handling) and
-  gets quieter on concepts you've mastered — a teacher whose goal is its own obsolescence.
+- **Talks, and speaks first.** It greets you, says what you are about to build when a lesson opens,
+  reacts when a step ticks, and raises a new compiler error in conversation. You type back at any
+  point. Replies stream as they are written.
+- **Teaches a course from scratch** — sixteen lessons from your first program to a small CLI tool
+  you built, with ownership and borrowing in the middle where the real difficulty is. Steps tick
+  themselves as you work.
+- **Watches** `.rs` edits and rust-analyzer diagnostics via editor APIs — no screen capture — and
+  decides locally when you look stuck. Detection never calls a model.
+- **Understands 24 compiler errors** through built-in teaching content, so it rarely has nothing to
+  say.
+- **Tracks concept mastery** over time and gets quieter on what you have mastered — a teacher whose
+  goal is its own obsolescence.
+- **Refuses to write your code.** Enforced in the persona and again on the way out: a block long
+  enough to paste is replaced with an offer to talk through any line of it.
 
 ## Why it doesn't exist yet
 
@@ -82,22 +86,30 @@ The full diagram, data model, prompting contract, and heuristics live in
 
 ```bash
 npm install
-npm run verify     # typecheck, lint, 147 tests
+npm run verify     # typecheck, lint, 258 tests
 npm run build      # bundle
 npm run package    # .vsix you can install
 ```
 
 Then press <kbd>F5</kbd> in VS Code to launch an Extension Development Host, open a Rust project,
-and write something that upsets the borrow checker.
+and click the sensei icon.
 
-**No API key is needed.** With no model configured, hints come from the built-in material — a
-weaker personalization of the same teaching, not a stub. To personalize, set
-`rustPairTeacher.baseUrl` and `rustPairTeacher.model`, then run **Rust Pair Teacher: Set API key**
-(stored in the OS keychain, never in `settings.json`). Pointing `baseUrl` at a local Ollama means
-nothing leaves your machine at all.
+**Conversation needs a model; the course does not.** Run **Rust Pair Teacher: Set up a teaching
+model** and pick Ollama — free, local, no key, and nothing leaves your machine. Keys go to the OS
+keychain, never to `settings.json`. A ChatGPT or Claude subscription is *not* API access and the
+extension will tell you so rather than failing with a bare 401.
 
-Useful commands: **Explain what I'm stuck on** (bypasses every cooldown), **Open candidate log**
-(every decision it made, including the ones to stay quiet), **Show my learning telemetry**.
+Useful commands: **Start learning Rust**, **Explain what I'm stuck on** (bypasses every cooldown),
+**Open candidate log** (every decision it made, including the ones to stay quiet), **Show my
+learning telemetry**.
+
+To check a model actually follows the teaching persona:
+
+```bash
+CONFORMANCE_BASE_URL=http://localhost:11434/v1 \
+CONFORMANCE_MODEL=qwen2.5-coder:7b \
+npm run conformance
+```
 
 ## Build order
 
@@ -106,11 +118,13 @@ Useful commands: **Explain what I'm stuck on** (bypasses every cooldown), **Open
 3. ~~Chapter-pack format, concept content for the seven core borrow-checker codes, Lesson Engine,
    provider adapter, sidebar.~~
 4. ~~Learner model, hint ladder, resolution tracking, scaffold fading.~~
-5. **← here.** Dogfood it. Tune the thresholds against a real candidate log, then recruit 20–50
-   Rust learners and answer the two validation questions: do ambient interruptions feel helpful or
-   noisy, and does concept tracking change what people study?
-6. Guided scaffolding ("you do it" action cards), chapter registry, the rest of the lifecycle
-   catalog in the system design.
+5. ~~Conversational tutor, sixteen-lesson course, streaming, spend cap.~~
+6. **← here.** Use it. Tune the thresholds against a real candidate log, then recruit 20–50 Rust
+   learners and answer the two validation questions: do ambient interruptions feel helpful or noisy,
+   and does concept tracking change what people study?
+7. Whatever the answers demand. Remaining engineering is tracked in
+   [`docs/BACKLOG.md`](docs/BACKLOG.md), including six questions that need a decision before the
+   work behind them can start.
 
 ## Documentation
 
@@ -120,18 +134,22 @@ Useful commands: **Explain what I'm stuck on** (bypasses every cooldown), **Open
 | [`docs/market-research.md`](docs/market-research.md) | Competitive landscape, market signals, gap analysis, staged recommendations |
 | [`docs/engineering-plan.md`](docs/engineering-plan.md) | Phases, module boundaries, the four testing layers, CI gates, release |
 | [`docs/language-extensibility.md`](docs/language-extensibility.md) | Which seams keep a second language additive, and which to actually build in v1 |
+| [`docs/BACKLOG.md`](docs/BACKLOG.md) | Evidence-based tickets, and the open questions blocking them |
+| [`docs/manual-test.md`](docs/manual-test.md) | What to check by hand before a release, and what has never been checked |
 | [`docs/handout.md`](docs/handout.md) | Condensed research summary + design in a single handout |
 
 ## Open questions
 
-- Interruption budget numbers, cooldown windows, and idle thresholds are placeholders pending
-  dogfooding. This is the biggest open question in the project: everything else is built, and none
-  of it matters if the timing is wrong.
-- JSON vs SQLite cutover point for the learner model.
-- Chapter registry hosting beyond GitHub Releases.
+- **Every threshold is a guess.** How long an error must linger, how idle you must be. Everything
+  else is built and none of it matters if the timing is wrong. The instrument to settle this is the
+  candidate log, and it has never been run against real use.
+- **Nothing has ever run in real VS Code.** The suite covers the logic; the UI is unexercised.
+- Whether the tutor should ever write files, and whether the model-free path is still a requirement
+  now that conversation needs one — see Q1 and Q2 in [`docs/BACKLOG.md`](docs/BACKLOG.md).
 - Licensing conversation with Brown University's Cognitive Engineering Lab before leaning harder on
   their conceptual model.
-- The name. "BorrowSensei" is a placeholder.
+- The name. "BorrowSensei" is a placeholder, and the repo, the extension and the docs currently
+  disagree with each other.
 
 ## License
 

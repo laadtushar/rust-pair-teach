@@ -23,8 +23,8 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 1. `code --install-extension rust-pair-teacher-<version>.vsix`
 2. Reload VS Code.
 3. **Expect:** a sensei icon in the activity bar.
-4. **Expect:** Output → *Rust Pair Teacher* contains `[packs] loaded rust-borrow-basics with 3 concepts`
-   and `[course] 8 lessons available`.
+4. **Expect:** Output → *Rust Pair Teacher* contains one `[packs] loaded …` line per pack —
+   `rust-borrow-basics`, `rust-common-errors`, `rust-from-scratch` — and `[course] 16 lessons available`.
 5. **Expect:** the `[provider]` line appears **exactly once** (regression guard for A2).
 
 ---
@@ -39,7 +39,7 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 
 **M2. Lessons are reachable without a model**
 1. Click *Lessons*.
-2. **Expect:** eight lessons listed, all unticked, progress bar at 0.
+2. **Expect:** sixteen lessons listed, all unticked, progress bar at 0.
 3. Click any lesson.
 4. **Expect:** you return to chat with the lesson title in the header.
 
@@ -92,10 +92,21 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 3. **Expect:** no block long enough to paste. If one appears, that is a **P0 failure** — the product's
    central promise.
 
-**C5. Draft survives a re-render**
+**C5. Draft survives a re-render** *(regression guard for B4)*
 1. Type half a sentence into the composer, do not send.
 2. Save a `.rs` file in the editor.
-3. **Expect:** your half-typed text is still there.
+3. **Expect:** your half-typed text is still there, the caret has not moved, and focus is unchanged.
+
+**C5b. Streaming** *(B1)*
+1. Ask something that takes a paragraph to answer.
+2. **Expect:** text appears progressively rather than all at once.
+3. **Expect:** while it writes, a *Stop* button is visible; pressing it ends the reply and leaves
+   no half-sentence attributed to the tutor.
+4. **Expect:** if the answer contains a code block, the block does not appear until it is complete.
+
+**C5c. Spend cap** *(B3)*
+1. Set `rustPairTeacher.dailyCallLimit` to 1, reload, and send two messages.
+2. **Expect:** the second is refused with a message naming when it resets and which setting raises it.
 
 **C6. History survives a reload** *(regression guard for A4)*
 1. Have a short conversation.
@@ -137,6 +148,11 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 1. Complete a lesson. Reload the window.
 2. **Expect:** progress retained, next lesson current.
 
+**L6. The course reaches the end**
+1. From the lesson list, open the last lesson.
+2. **Expect:** *Build something end to end*, and the button reads *Finish the course* rather than
+   *Mark done and continue*.
+
 ---
 
 ## Ambient watching
@@ -168,13 +184,19 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 1. Run *Show my learning telemetry* without enabling it.
 2. **Expect:** told it is off, not an empty report.
 
+**P3. No workspace open** *(F3)*
+1. Close the folder so no workspace is open, then open the panel.
+2. **Expect:** the tutor says there is no project yet and offers to walk through `cargo new`,
+   rather than discussing a project that does not exist.
+
 ---
 
 ## Result log
 
 | Date | Version | Env | Result | Notes |
 |---|---|---|---|---|
-| 2026-08-11 | 0.5.0 | CI container, no VS Code | ⚠️ partial | Only S1.4 could be executed here: the packaged `.vsix` does contain `extension/packs/{rust-from-scratch,rust-borrow-basics}/chapter.toml`, so pack loading will resolve at runtime. Everything requiring a running editor is still ⬜. |
+| 2026-08-11 | 0.5.0 | CI container, no VS Code | ⚠️ partial | Only S1.4 could be executed: the packaged `.vsix` contains the pack files where `loadPackFromDisk` expects them. Everything requiring a running editor is ⬜. |
+| 2026-08-12 | 0.10.0 | CI container, no VS Code | ⚠️ partial | S1.4 re-verified against three packs. Expectations updated for 16 lessons and the new per-pack log lines — the previous version of this page asserted output that no longer exists, which is exactly the rot a script like this accumulates when it is never run. |
 
 ### Known-unverified, highest risk first
 

@@ -217,7 +217,7 @@ unverified.
 with expected observable results. Executed once against the current build and the results recorded,
 including failures.
 
-### C3 — Model conformance run `P2` `M`
+### C3 — Model conformance run `P2` `M` — **harness DONE; never run against a real model**
 
 **Why.** The engineering plan §3.4 specifies this and it has never run. "Levels 1–2 work on small
 local models" is an untested claim, and the chat persona is far harder to follow than the old JSON
