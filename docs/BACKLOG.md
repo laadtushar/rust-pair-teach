@@ -209,18 +209,30 @@ unverified.
 - **Risk:** headless VS Code in CI is fiddly and can be flaky. Time-box to `L`; if it exceeds that,
   fall back to C2 and re-scope.
 
-**Outcome (2026-08-13).** The suite and a CI job are written and the bundles build, but it has
-**never run**. This sandbox's network policy denies `CONNECT` to `update.code.visualstudio.com`
-with a 403, so `@vscode/test-electron` cannot fetch an editor to launch:
+**Outcome (2026-08-13).** It cannot run in the dev sandbox — the network policy denies `CONNECT`
+to `update.code.visualstudio.com` with a 403, so `test-electron` cannot fetch an editor. It ran on
+CI instead, and **five of six assertions passed on the first attempt**:
 
 ```
-Failed to parse response from https://update.code.visualstudio.com/api/releases/stable as JSON
-curl: (56) CONNECT tunnel failed, response 403
+✔ the extension is present and activates
+✔ every contributed command is actually registered
+✔ the packs load from the packaged layout
+✔ settings are contributed with the documented defaults
+✔ the sidebar view is contributed
+✗ activating with a Rust file open — "fixture workspace should contain a .rs file"
 ```
 
-That is an environment restriction, not a defect in the harness. Its first real execution will be
-the next CI run on GitHub Actions, where the network is open. **Until that run goes green, treat
-every assertion in it as unverified** — including the claim that the extension activates at all.
+The failure was in the harness, not the product: `__dirname` is `out/` after bundling, so the
+fixture workspace resolved one directory too high and `findFiles` matched nothing. Fixed, and the
+assertion now names the folder it searched so the next such mistake explains itself.
+
+**What this settles.** The extension activates in a real editor; every contributed command is
+genuinely registered rather than a menu entry that throws; the packs resolve from the installed
+layout; telemetry defaults off and the no-code rule defaults on. All four were assumptions through
+eleven releases.
+
+**What it still does not cover.** Anything requiring a webview to render or a model to answer —
+the chat UI, streaming, the composer, step ticking. Those remain manual-only.
 
 ### C2 — Written manual test script `P1` `S` — **DONE (written; execution still owed)**
 

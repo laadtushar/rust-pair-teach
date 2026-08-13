@@ -63,8 +63,14 @@ suite('activation', () => {
   });
 
   test('activating with a Rust file open does not throw', async () => {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    assert.ok(folders.length > 0, 'no workspace folder was opened — check the launchArgs path');
+
     const files = await vscode.workspace.findFiles('**/*.rs', undefined, 1);
-    assert.ok(files.length > 0, 'fixture workspace should contain a .rs file');
+    assert.ok(
+      files.length > 0,
+      `no .rs file under ${folders[0]?.uri.fsPath ?? '?'} — the fixture workspace is missing or empty`
+    );
     const doc = await vscode.workspace.openTextDocument(files[0]!);
     await vscode.window.showTextDocument(doc);
     assert.strictEqual(doc.languageId, 'rust');

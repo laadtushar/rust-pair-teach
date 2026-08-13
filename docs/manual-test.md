@@ -1,7 +1,8 @@
 # Manual test script
 
-Nothing in this project has ever run inside real VS Code. Until [C1](BACKLOG.md#c1--integration-test-in-real-vs-code)
-exists, this script is the only answer to "did we break it".
+[C1](BACKLOG.md#c1--integration-test-in-real-vs-code) now covers activation, command registration,
+pack loading and settings defaults in a real editor on CI. Everything below that involves rendering
+a webview, talking to a model, or ticking a step is still only answered here, by hand.
 
 Run it against a fresh install before every release. Record the result — **including failures** — in
 the log at the bottom. A run with no recorded failures and no recorded date is not a run.
@@ -196,13 +197,14 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 | Date | Version | Env | Result | Notes |
 |---|---|---|---|---|
 | 2026-08-11 | 0.5.0 | CI container, no VS Code | ⚠️ partial | Only S1.4 could be executed: the packaged `.vsix` contains the pack files where `loadPackFromDisk` expects them. Everything requiring a running editor is ⬜. |
-| 2026-08-13 | 0.11.0 | CI container | ❌ blocked | Tried to run the new integration suite here; the sandbox denies CONNECT to `update.code.visualstudio.com` (403), so VS Code cannot be downloaded. The harness is committed and will first execute on GitHub Actions. |
+| 2026-08-13 | 0.11.0 | GitHub Actions, real VS Code | ✅ 5/6 | First execution ever. Activation, command registration, pack loading from the installed layout, settings defaults and the sidebar view id all pass. The sixth failed on a wrong fixture path in the harness, since fixed. Blocked in the dev sandbox (403 on the VS Code download), so CI is the only place it runs. |
 | 2026-08-12 | 0.10.0 | CI container, no VS Code | ⚠️ partial | S1.4 re-verified against three packs. Expectations updated for 16 lessons and the new per-pack log lines — the previous version of this page asserted output that no longer exists, which is exactly the rot a script like this accumulates when it is never run. |
 
 ### Known-unverified, highest risk first
 
 1. **L4 command steps** — terminal shell integration is not universal; unproven on any shell.
-2. **Everything in C** — the chat UI has never rendered in a real webview.
+2. **Everything in C** — the chat UI has never rendered in a real webview. The integration suite
+   covers activation and contributions, not rendering, so this stays manual-only.
 3. ~~**S1.4 pack loading**~~ — verified 2026-08-11: the paths are present in the `.vsix` at the
    location `loadPackFromDisk` expects. Runtime resolution itself is still untested, but the files
    are demonstrably where the code looks for them.

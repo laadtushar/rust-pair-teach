@@ -9,8 +9,13 @@ import { runTests } from '@vscode/test-electron';
  * "does the extension actually activate", which no amount of unit coverage can.
  */
 async function main(): Promise<void> {
-  const extensionDevelopmentPath = resolve(__dirname, '..');
+  // Paths resolve from out/, where esbuild puts this file — not from test/integration/ where it
+  // is written. The first CI run failed on exactly this: the fixture path was one directory off
+  // and findFiles matched nothing.
+  const repoRoot = resolve(__dirname, '..');
+  const extensionDevelopmentPath = repoRoot;
   const extensionTestsPath = resolve(__dirname, 'suite/index.cjs');
+  const fixtureWorkspace = resolve(repoRoot, 'test/fixtures/workspace');
 
   try {
     await runTests({
@@ -22,7 +27,7 @@ async function main(): Promise<void> {
         '--disable-extensions',
         '--no-sandbox',
         '--disable-gpu',
-        resolve(__dirname, '../fixtures/workspace'),
+        fixtureWorkspace,
       ],
     });
   } catch (err) {
