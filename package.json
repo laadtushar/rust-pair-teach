@@ -2,7 +2,7 @@
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
   "description": "An editor-native tutor that watches your Rust and teaches with tiered hints instead of writing your code.",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -124,14 +124,20 @@
     "build": "esbuild src/vscode/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "verify": "npm run typecheck && npm run lint && npm run test",
     "package": "vsce package --no-dependencies",
-    "conformance": "vitest run test/conformance.manual.test.ts"
+    "conformance": "vitest run test/conformance.manual.test.ts",
+    "build:integration": "esbuild test/integration/runTest.ts test/integration/suite/index.ts test/integration/suite/extension.test.ts --bundle --outdir=out --outbase=test/integration --platform=node --format=cjs --external:vscode --external:mocha --external:@vscode/test-electron --out-extension:.js=.cjs",
+    "test:integration": "npm run build && npm run build:integration && node out/runTest.cjs"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.10.2",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.24.2",
     "eslint": "^9.17.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.8.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
     "vitest": "^2.1.8"

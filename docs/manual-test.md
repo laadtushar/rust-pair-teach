@@ -196,6 +196,7 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 | Date | Version | Env | Result | Notes |
 |---|---|---|---|---|
 | 2026-08-11 | 0.5.0 | CI container, no VS Code | ⚠️ partial | Only S1.4 could be executed: the packaged `.vsix` contains the pack files where `loadPackFromDisk` expects them. Everything requiring a running editor is ⬜. |
+| 2026-08-13 | 0.11.0 | CI container | ❌ blocked | Tried to run the new integration suite here; the sandbox denies CONNECT to `update.code.visualstudio.com` (403), so VS Code cannot be downloaded. The harness is committed and will first execute on GitHub Actions. |
 | 2026-08-12 | 0.10.0 | CI container, no VS Code | ⚠️ partial | S1.4 re-verified against three packs. Expectations updated for 16 lessons and the new per-pack log lines — the previous version of this page asserted output that no longer exists, which is exactly the rot a script like this accumulates when it is never run. |
 
 ### Known-unverified, highest risk first

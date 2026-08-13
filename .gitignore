@@ -24,3 +24,7 @@ Thumbs.db
 # Local learner data (never commit)
 learner-model.json
 *.local.json
+
+# integration test build output
+/out/
+/.vscode-test/

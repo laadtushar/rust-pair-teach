@@ -36,6 +36,25 @@ jobs:
       - name: Bundle
         run: npm run build
 
+  # Separate job: it downloads a real VS Code and needs a virtual display, so a failure here
+  # should be distinguishable at a glance from a unit-test failure.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The only test that answers "does the extension actually activate". Everything else in this
+      # repository runs against a stub.
+      - name: Integration tests in real VS Code
+        run: xvfb-run -a npm run test:integration
+
 # Deliberately not here:
 #   - model conformance (costs money, nondeterministic) — manually triggered, see
 #     docs/engineering-plan.md §3.4

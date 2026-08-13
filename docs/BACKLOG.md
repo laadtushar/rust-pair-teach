@@ -23,8 +23,8 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 | ~~No spend guard exists~~ | Fixed: `SpendGuard`, daily call ceiling, persisted and shown in telemetry |
 | No response caching exists | Design §3.5 promises it; no cache in `src/` |
 | ~~No streaming~~ | Fixed: optional `stream()` on the adapter, SSE-decoded; providers without it fall back |
-| No integration test against real VS Code | `@vscode/test-electron` is not a dependency; no integration test file |
-| Nothing has ever run in real VS Code | Only a stubbed `require()` smoke test |
+| ~~No integration test against real VS Code~~ | Harness added; blocked from running locally by network policy, first run is in CI |
+| Nothing has ever run in real VS Code | Still true until the CI integration job goes green |
 
 ---
 
@@ -194,7 +194,7 @@ narrow the code region) before sending; log when it happens. A test asserts the 
 
 ## Epic C — Verify it actually works (P1)
 
-### C1 — Integration test in real VS Code `P1` `L`
+### C1 — Integration test in real VS Code `P1` `L` — **harness landed; never executed locally**
 
 **Why.** Nothing in this project has ever run inside VS Code. The current smoke test stubs the
 `vscode` module, which proves the bundle parses and nothing else. Every UI claim in the README is
@@ -208,6 +208,19 @@ unverified.
 - Runs on Linux CI; documented as also runnable locally.
 - **Risk:** headless VS Code in CI is fiddly and can be flaky. Time-box to `L`; if it exceeds that,
   fall back to C2 and re-scope.
+
+**Outcome (2026-08-13).** The suite and a CI job are written and the bundles build, but it has
+**never run**. This sandbox's network policy denies `CONNECT` to `update.code.visualstudio.com`
+with a 403, so `@vscode/test-electron` cannot fetch an editor to launch:
+
+```
+Failed to parse response from https://update.code.visualstudio.com/api/releases/stable as JSON
+curl: (56) CONNECT tunnel failed, response 403
+```
+
+That is an environment restriction, not a defect in the harness. Its first real execution will be
+the next CI run on GitHub Actions, where the network is open. **Until that run goes green, treat
+every assertion in it as unverified** — including the claim that the extension activates at all.
 
 ### C2 — Written manual test script `P1` `S` — **DONE (written; execution still owed)**
 
