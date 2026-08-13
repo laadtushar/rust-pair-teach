@@ -23,8 +23,8 @@ rather than written as a ticket — a ticket built on a guess is worse than no t
 | ~~No spend guard exists~~ | Fixed: `SpendGuard`, daily call ceiling, persisted and shown in telemetry |
 | No response caching exists | Design §3.5 promises it; no cache in `src/` |
 | ~~No streaming~~ | Fixed: optional `stream()` on the adapter, SSE-decoded; providers without it fall back |
-| ~~No integration test against real VS Code~~ | Harness added; blocked from running locally by network policy, first run is in CI |
-| Nothing has ever run in real VS Code | Still true until the CI integration job goes green |
+| ~~No integration test against real VS Code~~ | Harness added and green on CI |
+| ~~Nothing has ever run in real VS Code~~ | Resolved 2026-08-13: activation, command registration and execution, pack loading and settings defaults all verified in a real editor. Rendering and model behaviour remain unverified. |
 
 ---
 
@@ -194,7 +194,7 @@ narrow the code region) before sending; log when it happens. A test asserts the 
 
 ## Epic C — Verify it actually works (P1)
 
-### C1 — Integration test in real VS Code `P1` `L` — **harness landed; never executed locally**
+### C1 — Integration test in real VS Code `P1` `L` — **DONE, green on CI**
 
 **Why.** Nothing in this project has ever run inside VS Code. The current smoke test stubs the
 `vscode` module, which proves the bundle parses and nothing else. Every UI claim in the README is

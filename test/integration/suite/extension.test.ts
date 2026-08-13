@@ -62,6 +62,21 @@ suite('activation', () => {
     await vscode.commands.executeCommand('rustPairTeacher.lesson.focus');
   });
 
+  test('non-interactive commands run without throwing', async () => {
+    // Registration only proves the id exists. These execute the real handlers against a real
+    // editor — code that has never run outside a stub. Interactive commands (setupModel,
+    // setApiKey) are excluded because they block on a quick pick that nothing will answer.
+    await vscode.commands.executeCommand('rustPairTeacher.toggleAmbient');
+    await vscode.commands.executeCommand('rustPairTeacher.toggleAmbient');
+    await vscode.commands.executeCommand('rustPairTeacher.showTelemetry');
+    await vscode.commands.executeCommand('rustPairTeacher.teachMe');
+    await vscode.commands.executeCommand('rustPairTeacher.chat');
+  });
+
+  test('the course is available from the command palette', async () => {
+    await vscode.commands.executeCommand('rustPairTeacher.startCourse');
+  });
+
   test('activating with a Rust file open does not throw', async () => {
     const folders = vscode.workspace.workspaceFolders ?? [];
     assert.ok(folders.length > 0, 'no workspace folder was opened — check the launchArgs path');
