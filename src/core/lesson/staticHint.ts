@@ -1,3 +1,4 @@
+import { explainCommandFor } from '../language.js';
 import type { ConceptEntry } from '../pack/types.js';
 import type { DiagnosticSignature } from '../types.js';
 
@@ -9,7 +10,7 @@ export interface Hint {
   text: string;
   /** True when this came from the pack rather than a model — shown to the learner as such. */
   offline: boolean;
-  /** For codes, the `rustc --explain` the learner can run themselves. */
+  /** The compiler's own explanation the learner can run themselves, for languages that have one. */
   explainCommand?: string;
 }
 
@@ -60,10 +61,4 @@ export function staticHint(
 
 function firstParagraphs(text: string, n: number): string {
   return text.split(/\n\s*\n/).slice(0, n).join('\n\n');
-}
-
-function explainCommandFor(sig: DiagnosticSignature | undefined): string | undefined {
-  if (!sig || sig.kind !== 'code') return undefined;
-  if (!/^E\d{4}$/.test(sig.value)) return undefined;
-  return `rustc --explain ${sig.value}`;
 }

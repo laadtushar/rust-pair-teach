@@ -6,15 +6,16 @@ import * as vscode from 'vscode';
 import { defaultConfig, type DetectorConfig } from '../core/config.js';
 import { MomentDetector } from '../core/detector.js';
 import { EditStream } from '../core/editStream.js';
+import { isWatched, WATCHED_EDITOR_IDS, languageForEditorId } from '../core/language.js';
 import { LearnerStore } from '../core/learner/store.js';
-import { loadPackFromDisk } from '../core/pack/loadFromDisk.js';
+import { discoverPacks } from '../core/pack/discover.js';
 import { indexBySignature } from '../core/pack/schema.js';
 import type { ConceptEntry } from '../core/pack/types.js';
 import { OpenAiCompatibleProvider } from '../core/provider/openaiCompatible.js';
 import { diagnoseCredential, PRESETS, testConnection } from '../core/provider/setup.js';
 import { describeEgress, type ProviderAdapter } from '../core/provider/types.js';
 import { describeDecision, formatDecision } from '../core/log.js';
-import { toSignature } from '../core/signature.js';
+import { SignatureResolver } from '../core/signature.js';
 import { interpret, Telemetry } from '../core/telemetry.js';
 import { TutorSession } from '../core/session.js';
 import type { DiagnosticObservation } from '../core/types.js';
@@ -28,7 +29,6 @@ import type { ChatContext, ChatMessage } from '../core/chat/types.js';
 import { extractRegion } from '../core/lesson/region.js';
 import { TutorSidebar, type SidebarAction } from './sidebar.js';
 
-const LANGUAGE = 'rust';
 const TICK_MS = 1_000;
 
 /**
@@ -54,41 +54,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let model = await store.load(Date.now());
 
   // Every pack in the folder, so adding teaching content never means editing this file.
+  const { packs, failures } = await discoverPacks(
+    vscode.Uri.joinPath(context.extensionUri, 'packs').fsPath
+  );
   const conceptIndex = new Map<string, ConceptEntry>();
-  const PACK_IDS = ['rust-borrow-basics', 'rust-common-errors', 'rust-from-scratch'];
-  for (const id of PACK_IDS) {
-    try {
-      const pack = await loadPackFromDisk(
-        vscode.Uri.joinPath(context.extensionUri, 'packs', id).fsPath
-      );
-      for (const [key, concept] of indexBySignature(pack)) {
-        if (!conceptIndex.has(key)) conceptIndex.set(key, concept);
-      }
-      output.appendLine(
-        `[packs] loaded ${pack.meta.id} — ${String(pack.concepts.length)} concepts, ${String(pack.lessons.length)} lessons`
-      );
-    } catch (err) {
-      // A broken pack must not take the extension down; the others still teach.
-      output.appendLine(`[packs] ${id} failed to load: ${String(err)}`);
+  for (const pack of packs) {
+    for (const [key, concept] of indexBySignature(pack)) {
+      if (!conceptIndex.has(key)) conceptIndex.set(key, concept);
     }
+    output.appendLine(
+      `[packs] loaded ${pack.meta.id} (${pack.meta.language}) — ${String(pack.concepts.length)} concepts, ${String(pack.lessons.length)} lessons`
+    );
+  }
+  for (const { id, reason } of failures) {
+    // A broken pack must not take the extension down; the others still teach.
+    output.appendLine(`[packs] ${id} failed to load: ${reason}`);
   }
 
+  // A codeless language's errors only reach a concept through this. Built from the packs, so a new
+  // language pack needs no code change to start matching.
+  const signatures = new SignatureResolver(packs, (pattern, err) =>
+    output.appendLine(`[packs] ignoring unusable pattern ${JSON.stringify(pattern)}: ${err}`)
+  );
+  output.appendLine(`[packs] ${String(signatures.size)} message pattern(s) live`);
+
   // ---- guided course -------------------------------------------------------
-  let course: Course | null = null;
   const progressKey = 'rustPairTeacher.courseProgress';
   const loadProgress = (): CourseProgress =>
     context.globalState.get<CourseProgress>(progressKey) ?? emptyProgress();
   const saveProgress = (p: CourseProgress) => void context.globalState.update(progressKey, p);
 
-  try {
-    const coursePack = await loadPackFromDisk(
-      vscode.Uri.joinPath(context.extensionUri, 'packs', 'rust-from-scratch').fsPath
-    );
-    course = new Course(coursePack.lessons, loadProgress());
-    output.appendLine(`[course] ${String(coursePack.lessons.length)} lessons available`);
-  } catch (err) {
-    output.appendLine(`[course] failed to load: ${String(err)}`);
-  }
+  // The course is whichever pack ships lessons. Only Rust has one today; a second course pack would
+  // need a picker, and inventing that UI before a second course exists would be guessing.
+  const coursePack = packs.find((p) => p.lessons.length > 0);
+  const course: Course | null = coursePack
+    ? new Course(coursePack.lessons, loadProgress())
+    : null;
+  output.appendLine(
+    coursePack
+      ? `[course] ${String(coursePack.lessons.length)} lessons available from ${coursePack.meta.id}`
+      : '[course] no pack ships lessons'
+  );
 
   // One provider, shared. Constructing it twice meant two clients, a duplicated [provider] log
   // line, and the credential warning firing twice on activation.
@@ -150,14 +156,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }) ?? { dispose: () => undefined }
   );
 
+  /**
+   * Read the editor's diagnostics through the resolver.
+   *
+   * A closure rather than a module function because it needs the packs: a Python message only
+   * becomes a teachable signature by matching a pattern some pack declared.
+   */
+  function readDiagnostics(uri: vscode.Uri, editorId: string): DiagnosticObservation[] {
+    const language = languageForEditorId(editorId)?.id ?? editorId;
+    return vscode.languages
+      .getDiagnostics(uri)
+      .filter((d) => d.severity === vscode.DiagnosticSeverity.Error)
+      .map((d) => ({
+        uri: uri.toString(),
+        signature: signatures.resolve(language, codeOf(d), d.message),
+        message: d.message,
+        startLine: d.range.start.line,
+        endLine: d.range.end.line,
+      }));
+  }
+
   /** Everything the tutor can see when it speaks. Rebuilt per turn, never accumulated. */
   function chatContext(): ChatContext {
     const editor = vscode.window.activeTextEditor;
-    const doc = editor?.document.languageId === LANGUAGE ? editor.document : undefined;
+    const doc =
+      editor && isWatched(editor.document.languageId) ? editor.document : undefined;
     const state = course?.refresh(workspaceView()) ?? null;
 
     const errors = doc
-      ? readDiagnostics(doc.uri).slice(0, 3).map((d) => `${d.signature.value}: ${d.message.split('\n')[0]!}`)
+      ? readDiagnostics(doc.uri, doc.languageId)
+          .slice(0, 3)
+          .map((d) => `${d.signature.value}: ${d.message.split('\n')[0]!}`)
       : [];
 
     const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
@@ -236,7 +265,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ---- editor wiring -------------------------------------------------------
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
-      if (e.document.languageId !== LANGUAGE) return;
+      if (!isWatched(e.document.languageId)) return;
       editStream.onEdit(e.document.uri.toString(), e.document.getText(), Date.now());
     }),
     // Step checkmarks are the teaching device — they have to tick as the learner works.
@@ -248,9 +277,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.onDidChangeDiagnostics((e) => {
       const now = Date.now();
       for (const uri of e.uris) {
+        // An unopened document cannot be classified, and teaching about a file the learner is not
+        // looking at was never the point — so it is skipped rather than assumed to be Rust.
         const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
-        if (doc && doc.languageId !== LANGUAGE) continue;
-        detector.onDiagnostics(uri.toString(), readDiagnostics(uri), now);
+        if (!doc || !isWatched(doc.languageId)) continue;
+        detector.onDiagnostics(uri.toString(), readDiagnostics(uri, doc.languageId), now);
       }
     })
   );
@@ -473,13 +504,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   async function teachOnDemand(now: number): Promise<void> {
     telemetry.onDemand();
     const editor = vscode.window.activeTextEditor;
-    if (!editor || editor.document.languageId !== LANGUAGE) {
-      void vscode.window.showInformationMessage('Open a Rust file first.');
+    if (!editor || !isWatched(editor.document.languageId)) {
+      void vscode.window.showInformationMessage(
+        `Open a file in one of the languages I teach first: ${WATCHED_EDITOR_IDS.join(', ')}.`
+      );
       return;
     }
     const uri = editor.document.uri;
     const line = editor.selection.active.line;
-    const observations = readDiagnostics(uri);
+    const observations = readDiagnostics(uri, editor.document.languageId);
     const at =
       observations.find((o) => o.startLine <= line && line <= o.endLine) ?? observations[0];
 
@@ -707,19 +740,6 @@ async function providerFromSettings(
     model,
     provider: new OpenAiCompatibleProvider({ baseUrl, ...(apiKey ? { apiKey } : {}) }),
   };
-}
-
-function readDiagnostics(uri: vscode.Uri): DiagnosticObservation[] {
-  return vscode.languages
-    .getDiagnostics(uri)
-    .filter((d) => d.severity === vscode.DiagnosticSeverity.Error)
-    .map((d) => ({
-      uri: uri.toString(),
-      signature: toSignature(LANGUAGE, codeOf(d), d.message),
-      message: d.message,
-      startLine: d.range.start.line,
-      endLine: d.range.end.line,
-    }));
 }
 
 function codeOf(d: vscode.Diagnostic): string | undefined {

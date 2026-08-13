@@ -3,6 +3,27 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.13.0 — it speaks Python too
+
+Not a course — the sixteen lessons are still Rust only, and a Python course would be a second
+curriculum rather than a translation. But the tutor now watches Python files, and when you hit one
+of the traps that catches everyone, it notices and starts a conversation about it.
+
+Five of them, chosen because they are the ones that waste an afternoon rather than a minute:
+
+Assignment is what creates a local (why reading a global on line 2 fails because you assigned to it
+on line 5) · default arguments are evaluated once, so a `[]` default remembers · where the `None`
+came from, which is almost never the line that crashed · changing a dict while looping over it, and
+why the list version fails silently instead · and closures capturing the variable rather than its
+value.
+
+**Also**
+
+- Adding a language is now a folder. The extension reads whatever packs it finds instead of a list
+  written into the code, so teaching content and the code that runs it move independently.
+- Fixed: pattern-matched errors could never reach a concept. Languages without error codes — Python,
+  Go, Ruby — were architecturally supported and practically silent. Rust was unaffected.
+
 ## 0.12.0 — one tutor, not two
 
 Until now the extension had two personalities. Connect a model and you got a conversation; connect

@@ -2,7 +2,7 @@
   "name": "rust-pair-teacher",
   "displayName": "Rust Pair Teacher",
   "description": "An editor-native Rust tutor that talks with you while you work, and never writes your code.",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0",
@@ -14,6 +14,7 @@
   ],
   "activationEvents": [
     "onLanguage:rust",
+    "onLanguage:python",
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",

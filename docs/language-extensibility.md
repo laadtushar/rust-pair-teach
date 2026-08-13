@@ -1,8 +1,12 @@
 # Designing for more languages later
 
-Rust is the wedge, not the ceiling. This document defines the seams that make a second language an
-additive change rather than a rewrite — and, just as importantly, states which of those seams to
-actually build in v1.
+Rust is the wedge, not the ceiling. This document defined the seams that make a second language an
+additive change rather than a rewrite, and stated which of them to actually build in v1.
+
+**A second language has now arrived**, so the parts of this page that were predictions are marked
+with what actually happened. The short version: the persisted formats were right, the code seams
+were roughly right, and the one thing that mattered most — `kind: "pattern"` — was decoration that
+had never worked. See [What the second language actually found](#what-the-second-language-actually-found).
 
 ## The governing rule
 
@@ -38,8 +42,9 @@ Most of the system, which is the encouraging part. None of the following contain
   about syntax. "Same five-line region rewritten three times in two minutes" is a fact about a
   struggling human, not about a borrow checker.
 - **Interruption budget, cooldowns, snooze** — pure scheduling.
-- **Hint ladder** — question → reframed error → worked example is a pedagogy, not a language
-  feature.
+- **The conversation** — persona, proactive reasons, context assembly and the no-code rule are
+  pedagogy, not language features. (In v1 this said "hint ladder"; the ladder was retired, and its
+  successor turned out to be just as language-neutral.)
 - **Provider Adapter** — LLM plumbing.
 - **Learner model math** — EWMA scoring, decay, scaffold fading, `unresolvedStreak`.
 - **Sidebar UI, action cards, step verification, the "what happened" trail.**
@@ -54,7 +59,7 @@ Located in the current design:
 | # | Assumption | Where | Why it breaks |
 |---|---|---|---|
 | 1 | `cargo_test_passes` as a check verb | `checks.toml` vocabulary | Bakes a build tool into a *versioned data schema* — the expensive kind of mistake |
-| 2 | `todo!()` as the skeleton marker | F7, Action Engine, `scaffold/` | Not valid syntax anywhere else |
+| 2 | ~~`todo!()` as the skeleton marker~~ | ~~F7, Action Engine, `scaffold/`~~ | **Moot** — the tutor no longer writes files at all (Q1), so there is no marker to generalize |
 | 3 | Unnamespaced concept ids (`mutable_borrows`) | Learner model | Collides the moment a second language has a concept named `generics` or `traits` |
 | 4 | `errorCodes: ["E0502"]` as concept identity | Concept front-matter, episodes | Python, Go, Ruby, and JS have **no stable error codes** — only message text |
 | 5 | Cache keyed on "error code" | §3.5 | Same as 4; unkeyable for codeless languages |
@@ -123,21 +128,12 @@ and the set of executable commands stays a property of reviewed extension code, 
 content. Generalizing the vocabulary does **not** mean letting packs specify shell commands. It means
 the opposite — the pack says `test_passes`, and only the extension decides what that runs.
 
-## Fix 4 — skeleton markers as a language property
+## Fix 4 — skeleton markers as a language property — *withdrawn*
 
-`todo!()` becomes one entry in a small per-language table:
-
-| Language | Skeleton body | Comment syntax |
-|---|---|---|
-| Rust | `todo!()` | `//`, `///` |
-| TypeScript | `throw new Error("TODO")` | `//`, `/** */` |
-| Python | `raise NotImplementedError` | `#`, `"""` |
-| Go | `panic("TODO")` | `//` |
-
-Code-level, so v1 can hard-code Rust — but the `scaffold/` directories inside chapter packs are
-*data*, and their contents are language-specific by nature. That's correct and needs no
-generalization: a Rust pack ships Rust scaffolds. The pack's `language` field is what tells the
-Action Engine which markers to expect when verifying that a learner filled one in.
+This proposed a per-language table of skeleton bodies (`todo!()`, `raise NotImplementedError`,
+`panic("TODO")`). It is moot: the tutor no longer writes files, so there are no skeletons to mark.
+Recorded rather than deleted because "the generalization we did not need" is the more useful half
+of a design note like this one.
 
 ## The eventual interface (v2, not v1)
 
@@ -178,3 +174,68 @@ place.
 - **The wedge argument still holds.** Rust is the right first language because its errors are
   unusually *teachable*: precise, code-identified, and clustered around one famously hard concept.
   A language whose errors are vague prose is a materially harder product, not just a port.
+
+---
+
+## What the second language actually found
+
+Python landed as `packs/python-common-errors` — five concepts, twelve message patterns, no course.
+Here is the honest scorecard against the predictions above.
+
+### The thing that was broken
+
+**`kind: "pattern"` had never worked, and nothing would have told us.** The type existed, the schema
+accepted `patterns = [...]`, the tests passed, and the design doc described it confidently. But
+`indexBySignature` builds an exact-match `Map`, and the two sides of that map could never meet:
+
+```
+pack declares : python/pattern:^local variable '\w+' referenced before assignment$
+detector makes: python/pattern:local variable <id> referenced before assignment
+```
+
+A pack author would have written correct-looking patterns, installed the pack, watched the tutor say
+nothing, and had no way to find out why — the failure mode of a lookup that misses is silence.
+
+The fix is `SignatureResolver` (`src/core/signature.ts`): resolve *before* keying rather than match
+at lookup time. A message a pack claims takes that pack's own pattern string as its signature, so it
+stays one stable value for concept lookup, cooldowns, novelty and episode records alike. A message
+nobody claims still gets a normalized-message signature, so the detector's timing heuristics keep
+working on errors we cannot teach.
+
+The guard against a repeat is `test/multilingual.test.ts`: every declared pattern must be reached by
+a real, verbatim compiler or linter message held as a fixture. Writing it immediately deleted two
+patterns that had been invented rather than observed.
+
+### The predictions that held
+
+- **Namespaced concept ids.** `python/scope.assignment` sits beside `rust/ownership.moves` with no
+  collision and no migration. Paid for in v1, collected in v2, exactly as argued.
+- **`DiagnosticSignature` as a two-shape union.** The shape was right; only the plumbing was missing.
+- **The pack schema needed no change at all.** `language = "python"` in `chapter.toml`, `patterns`
+  instead of `codes`, and the loader, validator and index took it without a line of new code.
+- **Everything hard stayed language-neutral.** Detector, learner model, interruption budget,
+  conversation: untouched. That is the load-bearing claim of this document and it survived.
+
+### The predictions that were wrong
+
+- **"Leave the code interfaces Rust-only until a second language arrives"** was right in spirit and
+  slightly too relaxed in practice. `const LANGUAGE = 'rust'` in `extension.ts` was cheap to remove,
+  but `explainCommandFor` had hard-coded `rustc --explain` *inside* `staticHint`, where a Python
+  concept would have suggested a Rust command. One line, easy to miss, learner-visible.
+- **The `LanguageProvider` interface was not built, and should not be.** What Python actually needed
+  was two fields — which editor ids to watch, and whether the compiler explains itself. That is
+  `src/core/language.ts`, about forty lines, and it deliberately contains no hint logic, no scoring,
+  no scheduling and no UI. The v2 interface sketched above is still speculative; the third language
+  gets to say whether it is right.
+- **Pack loading was a hard-coded array of three ids**, directly beneath a comment claiming that
+  adding content never means editing that file. Discovery (`src/core/pack/discover.ts`) makes the
+  comment true.
+
+### What Python does not get
+
+No course. Sixteen guided lessons are the single most expensive artifact in the project, and a
+Python course would be a second one, not a port — the architecture generalizes, the pedagogy does
+not. Python gets the ambient tutor: it notices the error, names the concept, and talks about it.
+
+That is the honest boundary, and it matches the prediction this document opened with: *the concept
+table is the moat precisely because it is hard-won and language-specific.*

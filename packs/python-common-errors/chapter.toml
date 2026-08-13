@@ -1,0 +1,6 @@
+id = "python-common-errors"
+language = "python"
+version = "0.1.0"
+schemaVersion = 1
+title = "The Python errors beginners actually hit"
+prerequisites = []

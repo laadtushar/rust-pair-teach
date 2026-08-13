@@ -406,7 +406,12 @@ remains the single largest unvalidated assumption in the project.
    second language is the next real test of the extensibility claim.
 8. **E1** whenever the owner is available; it is not blocked by anything technical.
 
+**Closed since.** The second language landed (`packs/python-common-errors`), which was the only real
+test of the extensibility claim — and it found that `kind: "pattern"` had never worked. See
+[`language-extensibility.md`](language-extensibility.md#what-the-second-language-actually-found).
+
 **What is left, honestly.** Every P0 is closed. The remaining work is either blocked on someone with
 credentials (E1, E2 — release and Marketplace), blocked on hardware (F1 — Windows), or speculative
-(Q4 caching, D3, E3). The next genuinely useful thing is a second language pack, because that is the
-only way to find out whether the editor-agnostic core is actually editor-agnostic.
+(Q4 caching, D3, E3). The next genuinely useful thing is a learner: every threshold that decides
+*when* the tutor speaks is still an educated guess, and no amount of further engineering will
+resolve that.
