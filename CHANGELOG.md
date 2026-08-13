@@ -9,7 +9,7 @@ Not a course — the sixteen lessons are still Rust only, and a Python course wo
 curriculum rather than a translation. But the tutor now watches Python files, and when you hit one
 of the traps that catches everyone, it notices and starts a conversation about it.
 
-Five of them, chosen because they are the ones that waste an afternoon rather than a minute:
+Five of them, chosen because they cost an afternoon rather than a minute:
 
 Assignment is what creates a local (why reading a global on line 2 fails because you assigned to it
 on line 5) · default arguments are evaluated once, so a `[]` default remembers · where the `None`
@@ -17,12 +17,15 @@ came from, which is almost never the line that crashed · changing a dict while 
 why the list version fails silently instead · and closures capturing the variable rather than its
 value.
 
+It works with whichever checker you already use — Pylance, Pylint or Ruff. All three describe the
+same mistake in different words, and the tutor knows all three sets.
+
 **Also**
 
 - Adding a language is now a folder. The extension reads whatever packs it finds instead of a list
   written into the code, so teaching content and the code that runs it move independently.
-- Fixed: pattern-matched errors could never reach a concept. Languages without error codes — Python,
-  Go, Ruby — were architecturally supported and practically silent. Rust was unaffected.
+- Fixed: pattern-matched errors could never reach a concept. Languages without error codes were
+  supported on paper and silent in practice. Rust was unaffected — it has error codes.
 
 ## 0.12.0 — one tutor, not two
 
@@ -61,7 +64,7 @@ program of your own, with tests.
 
 **Also**
 
-- The tutor now understands twenty-four compiler errors rather than eleven — traits and missing
+- The tutor now understands twenty-three compiler errors rather than eleven — traits and missing
   methods, mutability, moves out of borrowed content, modules and visibility, exhaustive matching,
   and lifetime annotations. Fewer moments where it has nothing to say.
 - Replies stream in as they are written instead of appearing all at once. You can stop one

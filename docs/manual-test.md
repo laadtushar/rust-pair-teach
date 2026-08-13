@@ -197,6 +197,23 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
    one is open, and the region around your cursor — and *not* `SECRET_MARKER` from P1.
 3. With no model configured, **expect:** the header says nothing is sent, and shows what would be.
 
+**Y1. Python is watched too** *(0.13.0)*
+1. Install a Python checker — Pylance, the Pylint extension, or the Ruff extension. Any one.
+2. Open `test/fixtures/python/corpus/scope_assignment.py` from this repository. It is the same file
+   the pattern fixtures were captured from, so whatever your checker reports is already known-good.
+3. Wait for the squiggles, then leave the file alone for ~20 seconds.
+4. **Expect:** the tutor raises it in conversation and names *assignment is what creates a local* —
+   whichever of the three checkers you installed. They word it three different ways.
+5. **Expect:** no mention of `rustc --explain`. Python has no equivalent and the tutor must not
+   invent one.
+6. Open `none_propagation.py` and repeat. **Expect:** *where the None came from*.
+
+**Y2. It does not over-claim** *(0.13.0)*
+1. In the same file, note any diagnostic about style rather than about the concept — pylint's
+   `redefined-outer-name` is one the corpus reliably provokes.
+2. **Expect:** the tutor stays silent on those. Teaching about scope because a name shadowed
+   another would be worse than saying nothing.
+
 **P2. Telemetry is off by default**
 1. Run *Show my learning telemetry* without enabling it.
 2. **Expect:** told it is off, not an empty report.
@@ -225,6 +242,14 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 2b. **M3, the offline teaching path** — the code is unit-tested end to end
    (`session.offlineTeaching` → `chat.addTutorMessage`), but no human has watched a pack hint
    arrive in the thread.
+2c. **Y1/Y2, Python** — every pattern and code in the Python pack is asserted against real captured
+   output from Pylint, Ruff and Pyright (`test/fixtures/python/diagnostics.json`), and the packaged
+   `.vsix` is verified to load and resolve both languages. What is *not* verified is the last hop:
+   that VS Code's `Diagnostic.code` carries the same string the analyzer's CLI reports. The pylint
+   composite (`E0601:used-before-assignment`) is confirmed from `microsoft/vscode-pylint`'s source;
+   the Ruff and Pylance forms are confirmed from their source but not observed in a running editor.
+   The pack carries both codes and message patterns partly for this reason — if a code arrives in an
+   unexpected shape, the message still lands.
 3. ~~**S1.4 pack loading**~~ — verified 2026-08-11: the paths are present in the `.vsix` at the
    location `loadPackFromDisk` expects. Runtime resolution itself is still untested, but the files
    are demonstrably where the code looks for them.

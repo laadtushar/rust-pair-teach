@@ -59,6 +59,25 @@ interface PatternRule {
 }
 
 /**
+ * Every form a language server might put in `Diagnostic.code`, most specific first.
+ *
+ * The `:` split is not speculative. `microsoft/vscode-pylint` builds its diagnostics with
+ * `code=f"{msg_id}:{data.get('symbol')}"`, so a pylint diagnostic arrives as
+ * `E0601:used-before-assignment` — a string no pack author would think to declare, and which
+ * matches neither the id nor the symbol on its own. Ruff sends `F823`, Pylance sends
+ * `reportUnboundVariable`; both are already single tokens and split to themselves.
+ */
+export function codeCandidates(code: string): string[] {
+  const raw = code.trim();
+  if (raw === '') return [];
+  const parts = raw
+    .split(':')
+    .map((p) => p.trim())
+    .filter((p) => p !== '' && p !== raw);
+  return [raw, ...parts];
+}
+
+/**
  * Turns a raw diagnostic into the signature the packs actually key on.
  *
  * Without this, `kind: 'pattern'` was decoration. A pack declared a regex
@@ -73,9 +92,11 @@ interface PatternRule {
  */
 export class SignatureResolver {
   private rules: PatternRule[] = [];
+  /** `language/value` for every code any pack claims. */
+  private codes = new Set<string>();
 
   /**
-   * Compile the patterns from every loaded pack.
+   * Compile what the loaded packs claim.
    *
    * A malformed regex in a downloaded pack disables that one rule and is reported, rather than
    * throwing — one bad pattern must not take the other languages' teaching down with it.
@@ -84,7 +105,10 @@ export class SignatureResolver {
     for (const pack of packs) {
       for (const concept of pack.concepts) {
         for (const sig of concept.signatures) {
-          if (sig.kind !== 'pattern') continue;
+          if (sig.kind === 'code') {
+            this.codes.add(`${sig.language}/${sig.value}`);
+            continue;
+          }
           try {
             this.rules.push({
               language: sig.language,
@@ -99,16 +123,31 @@ export class SignatureResolver {
     }
   }
 
-  /** How many pattern rules are live. Zero for a Rust-only install, which is fine. */
+  /** How many message patterns are live. Zero for a Rust-only install, which is fine. */
   get size(): number {
     return this.rules.length;
   }
 
+  /**
+   * Turn a raw diagnostic into the signature the packs key on.
+   *
+   * The order is the whole design. A code a pack claims wins, because it is the most stable
+   * identifier any analyzer offers. Failing that, the message is tried against the patterns —
+   * which is what rescues a *generic* rule with a *specific* message, the shape Pylance produces
+   * constantly (`reportAttributeAccessIssue` fires for typos and for `None` alike, but only one of
+   * them says `for class "None"`). Failing both, the bare code or normalized message keeps
+   * cooldowns and novelty working on an error nobody can teach.
+   */
   resolve(language: string, code: string | undefined, message: string): DiagnosticSignature {
-    const bare = toSignature(language, code, message);
-    if (bare.kind === 'code') return bare;
+    if (code !== undefined) {
+      for (const candidate of codeCandidates(code)) {
+        if (this.codes.has(`${language}/${candidate}`)) {
+          return { kind: 'code', language, value: candidate };
+        }
+      }
+    }
 
-    // Patterns are authored against what the compiler actually prints, not against the normalized
+    // Patterns are authored against what the analyzer actually prints, not against the normalized
     // form — asking pack authors to write regexes over `<id>` placeholders would be a trap.
     const first = message.split('\n')[0]!.trim();
     for (const rule of this.rules) {
@@ -117,7 +156,8 @@ export class SignatureResolver {
         return { kind: 'pattern', language, value: rule.value };
       }
     }
-    return bare;
+
+    return toSignature(language, code, message);
   }
 }
 

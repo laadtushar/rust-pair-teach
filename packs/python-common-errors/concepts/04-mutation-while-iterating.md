@@ -1,10 +1,13 @@
 +++
 id = "collections.mutate-while-iterating"
 title = "Changing a collection you are walking"
+codes = [
+  "E4702", "modified-iterating-dict",
+  "E4703", "modified-iterating-set",
+  "W4701", "modified-iterating-list",
+]
 patterns = [
-  "dictionary changed size during iteration",
-  "set changed size during iteration",
-  "deque mutated during iteration",
+  "iterated (dict|set|list) .+ is being modified inside for loop body",
 ]
 socraticTemplates = [
   "The loop is holding a position in the collection. What happens to that position when the collection underneath it changes size?",

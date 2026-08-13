@@ -1,6 +1,10 @@
 +++
 id = "functions.mutable-defaults"
 title = "Default arguments are evaluated once"
+codes = [
+  "W0102", "dangerous-default-value",
+  "B006",
+]
 patterns = [
   "dangerous default value .+ as argument",
   "do not use mutable data structures for argument defaults",

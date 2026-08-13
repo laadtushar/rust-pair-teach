@@ -1,0 +1,226 @@
+{
+  "capturedWith": {
+    "python": "3.11.15",
+    "pylint": "pylint 4.0.7",
+    "ruff": "ruff 0.15.8",
+    "pyright": "pyright 1.1.408"
+  },
+  "diagnostics": [
+    {
+      "analyzer": "pylint",
+      "file": "late_binding.py",
+      "code": "W0631:undefined-loop-variable",
+      "message": "Using possibly undefined loop variable 'j'"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "late_binding.py",
+      "code": "W0640:cell-var-from-loop",
+      "message": "Cell variable i defined in loop"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "late_binding.py",
+      "code": "W0640:cell-var-from-loop",
+      "message": "Cell variable i defined in loop"
+    },
+    {
+      "analyzer": "pyright",
+      "file": "late_binding.py",
+      "code": "reportPossiblyUnboundVariable",
+      "message": "\"j\" is possibly unbound"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "late_binding.py",
+      "code": "B023",
+      "message": "Function definition does not bind loop variable `i`"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "late_binding.py",
+      "code": "B023",
+      "message": "Function definition does not bind loop variable `i`"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "late_binding.py",
+      "code": "PERF401",
+      "message": "Use a list comprehension to create a transformed list"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "mutable_defaults.py",
+      "code": "W0102:dangerous-default-value",
+      "message": "Dangerous default value [] as argument"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "mutable_defaults.py",
+      "code": "W0102:dangerous-default-value",
+      "message": "Dangerous default value {} as argument"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "mutable_defaults.py",
+      "code": "B006",
+      "message": "Do not use mutable data structures for argument defaults"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "mutable_defaults.py",
+      "code": "B006",
+      "message": "Do not use mutable data structures for argument defaults"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "mutate_while_iterating.py",
+      "code": "E4702:modified-iterating-dict",
+      "message": "Iterated dict 'd' is being modified inside for loop body, iterate through a copy of it instead."
+    },
+    {
+      "analyzer": "pylint",
+      "file": "mutate_while_iterating.py",
+      "code": "E4703:modified-iterating-set",
+      "message": "Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead."
+    },
+    {
+      "analyzer": "pylint",
+      "file": "mutate_while_iterating.py",
+      "code": "W4701:modified-iterating-list",
+      "message": "Iterated list 'xs' is being modified inside for loop body, consider iterating through a copy of it instead."
+    },
+    {
+      "analyzer": "pylint",
+      "file": "none_propagation.py",
+      "code": "E1111:assignment-from-no-return",
+      "message": "Assigning result of a function call, where the function has no return"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "none_propagation.py",
+      "code": "R1721:unnecessary-comprehension",
+      "message": "Unnecessary use of a comprehension, use list(value) instead."
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportArgumentType",
+      "message": "Argument of type \"None\" cannot be assigned to parameter \"obj\" of type \"Sized\" in function \"len\""
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportAttributeAccessIssue",
+      "message": "Cannot access attribute \"count\" for class \"None\""
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportAttributeAccessIssue",
+      "message": "Cannot access attribute \"strip\" for class \"None\""
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportCallIssue",
+      "message": "Object of type \"object\" is not callable"
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportOptionalCall",
+      "message": "Object of type \"None\" cannot be called"
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportOptionalIterable",
+      "message": "Object of type \"None\" cannot be used as iterable value"
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportOptionalMemberAccess",
+      "message": "\"upper\" is not a known attribute of \"None\""
+    },
+    {
+      "analyzer": "pyright",
+      "file": "none_propagation.py",
+      "code": "reportOptionalSubscript",
+      "message": "Object of type \"None\" is not subscriptable"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "none_propagation.py",
+      "code": "C416",
+      "message": "Unnecessary list comprehension (rewrite using `list()`)"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "scope_assignment.py",
+      "code": "E0118:used-prior-global-declaration",
+      "message": "Name 'counter' is used prior to global declaration"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "scope_assignment.py",
+      "code": "E0601:used-before-assignment",
+      "message": "Using variable 'TOTAL' before assignment"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "scope_assignment.py",
+      "code": "W0603:global-statement",
+      "message": "Using the global statement"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "scope_assignment.py",
+      "code": "W0621:redefined-outer-name",
+      "message": "Redefining name 'TOTAL' from outer scope (line 2)"
+    },
+    {
+      "analyzer": "pylint",
+      "file": "scope_assignment.py",
+      "code": "W0621:redefined-outer-name",
+      "message": "Redefining name 'counter' from outer scope (line 3)"
+    },
+    {
+      "analyzer": "pyright",
+      "file": "scope_assignment.py",
+      "code": "reportUnboundVariable",
+      "message": "\"TOTAL\" is unbound"
+    },
+    {
+      "analyzer": "pyright",
+      "file": "scope_assignment.py",
+      "code": "reportUnboundVariable",
+      "message": "\"counter\" is unbound"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "scope_assignment.py",
+      "code": "F823",
+      "message": "Local variable `TOTAL` referenced before assignment"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "scope_assignment.py",
+      "code": "F823",
+      "message": "Local variable `counter` referenced before assignment"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "scope_assignment.py",
+      "code": "PLE0118",
+      "message": "Name `counter` is used prior to global declaration on line 22"
+    },
+    {
+      "analyzer": "ruff",
+      "file": "scope_assignment.py",
+      "code": "PLW0603",
+      "message": "Using the global statement to update `counter` is discouraged"
+    }
+  ]
+}

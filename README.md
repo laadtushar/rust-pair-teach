@@ -20,13 +20,13 @@ Working name: **BorrowSensei** (placeholder).
   themselves as you work.
 - **Watches** edits and diagnostics via editor APIs — no screen capture — and decides locally when
   you look stuck. Detection never calls a model.
-- **Understands 24 Rust compiler errors** through built-in teaching content, so it rarely has
+- **Understands 23 Rust compiler errors** through built-in teaching content, so it rarely has
   nothing to say.
-- **Teaches Python too**, ambiently — five traps that cost beginners an afternoon each, matched on
-  message text because Python has no error codes. No Python course; the sixteen lessons are Rust.
-  Adding a language is a folder in `packs/`, not a code change: see
-  [`docs/language-extensibility.md`](docs/language-extensibility.md), which includes an honest
-  account of what the second language broke.
+- **Teaches Python too**, ambiently — five traps that cost beginners an afternoon each, keyed on
+  what Pylance, Pylint and Ruff actually emit rather than on what Python prints at runtime. No
+  Python course; the sixteen lessons are Rust. Adding a language is a folder in `packs/`, not a code
+  change: see [`docs/language-extensibility.md`](docs/language-extensibility.md), which includes an
+  honest account of what the second language broke.
 - **Tracks concept mastery** over time and gets quieter on what you have mastered — a teacher whose
   goal is its own obsolescence.
 - **Refuses to write your code.** Enforced in the persona and again on the way out: a block long
@@ -93,7 +93,7 @@ The full diagram, data model, prompting contract, and heuristics live in
 
 ```bash
 npm install
-npm run verify     # typecheck, lint, 258 tests
+npm run verify     # typecheck, lint, 286 tests
 npm run build      # bundle
 npm run package    # .vsix you can install
 ```

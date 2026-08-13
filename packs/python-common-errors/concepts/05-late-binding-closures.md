@@ -1,8 +1,15 @@
 +++
 id = "scope.late-binding"
 title = "Closures capture names, not values"
+codes = [
+  "W0640", "cell-var-from-loop",
+  "W0631", "undefined-loop-variable",
+  "B023",
+  "reportPossiblyUnboundVariable",
+]
 patterns = [
   "cell variable .+ defined in loop",
+  "function definition does not bind loop variable",
   "using possibly undefined loop variable",
 ]
 socraticTemplates = [

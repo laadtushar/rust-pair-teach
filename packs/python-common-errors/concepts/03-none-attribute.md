@@ -1,11 +1,24 @@
 +++
 id = "types.none-propagation"
 title = "Where the None came from"
+codes = [
+  # Pylance rules that are specifically about Optional/None, so claiming them cannot misfire.
+  "reportOptionalMemberAccess",
+  "reportOptionalSubscript",
+  "reportOptionalIterable",
+  "reportOptionalCall",
+  "reportOptionalOperand",
+  "reportOptionalContextManager",
+  # pylint: assigning the result of something that returns nothing - how most Nones are born.
+  "E1111", "assignment-from-no-return",
+]
 patterns = [
-  "'NoneType' object has no attribute",
-  "'NoneType' object is not (subscriptable|iterable|callable)",
-  "object of type 'NoneType' has no len",
-  "argument of type 'NoneType' is not iterable",
+  # reportAttributeAccessIssue and reportArgumentType are generic - they fire on typos too - so
+  # these key on the part of the message that is specifically about None.
+  "cannot access attribute .+ for class \"None\"",
+  ".+ is not a known attribute of \"None\"",
+  "object of type \"None\" (cannot be called|is not subscriptable|cannot be used as)",
+  "argument of type \"None\" cannot be assigned",
 ]
 socraticTemplates = [
   "The line that failed is where the None was *used*. Which line do you think produced it?",

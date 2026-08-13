@@ -1,10 +1,19 @@
 +++
 id = "scope.assignment"
 title = "Assignment is what creates a local"
+codes = [
+  # pylint E0601 arrives as "E0601:used-before-assignment"; the resolver splits it.
+  "E0601", "used-before-assignment",
+  "E0118", "used-prior-global-declaration",
+  # ruff
+  "F823", "PLE0118",
+  # pyright / Pylance
+  "reportUnboundVariable",
+]
 patterns = [
-  "local variable '.+' referenced before assignment",
-  "cannot access local variable '.+' where it is not associated with a value",
-  "name '.+' is used prior to global declaration",
+  "using variable .+ before assignment",
+  "local variable .+ referenced before assignment",
+  "name .+ is used prior to global declaration",
 ]
 socraticTemplates = [
   "This name exists outside the function and you only read it — so why does Python think it is local?",

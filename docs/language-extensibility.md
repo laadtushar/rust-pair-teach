@@ -179,14 +179,14 @@ place.
 
 ## What the second language actually found
 
-Python landed as `packs/python-common-errors` — five concepts, twelve message patterns, no course.
-Here is the honest scorecard against the predictions above.
+Python landed as `packs/python-common-errors` — five concepts, thirty rule codes, thirteen message
+patterns, no course. Two things broke, and the second was worse than the first.
 
-### The thing that was broken
+### Break 1: `kind: "pattern"` had never worked
 
-**`kind: "pattern"` had never worked, and nothing would have told us.** The type existed, the schema
-accepted `patterns = [...]`, the tests passed, and the design doc described it confidently. But
-`indexBySignature` builds an exact-match `Map`, and the two sides of that map could never meet:
+The type existed, the schema accepted `patterns = [...]`, the tests passed, and this document
+described the mechanism confidently. But `indexBySignature` builds an exact-match `Map`, and the two
+sides of that map could never meet:
 
 ```
 pack declares : python/pattern:^local variable '\w+' referenced before assignment$
@@ -202,34 +202,85 @@ stays one stable value for concept lookup, cooldowns, novelty and episode record
 nobody claims still gets a normalized-message signature, so the detector's timing heuristics keep
 working on errors we cannot teach.
 
-The guard against a repeat is `test/multilingual.test.ts`: every declared pattern must be reached by
-a real, verbatim compiler or linter message held as a fixture. Writing it immediately deleted two
-patterns that had been invented rather than observed.
+### Break 2: the patterns were written against the wrong thing entirely
+
+This is the instructive one, because the first fix passed every test and was still wrong.
+
+The patterns were authored from remembered CPython *traceback* text — `'NoneType' object has no
+attribute 'strip'`, `dictionary changed size during iteration`. Those strings are real; you can
+provoke every one of them in a REPL. They are also irrelevant, because `vscode.languages
+.getDiagnostics()` does not contain tracebacks. It contains whatever Pylance, Pylint or Ruff
+produced by *static* analysis, and none of the three phrases anything the way the interpreter does:
+
+| The mistake | pylint | ruff | Pylance |
+|---|---|---|---|
+| used before assignment | `Using variable 'x' before assignment` | ``Local variable `x` referenced before assignment`` | `"x" is unbound` |
+| mutating while iterating | `Iterated dict 'd' is being modified inside for loop body…` | *(no rule)* | *(no rule)* |
+| attribute on None | *(no rule)* | *(no rule)* | `Cannot access attribute "strip" for class "None"` |
+| late-bound closure | `Cell variable i defined in loop` | ``Function definition does not bind loop variable `i` `` | *(no rule)* |
+
+Three unrelated phrasings, three different quoting conventions — `'single'`, `` `backtick` ``,
+`"double"` — and coverage gaps in every column. Of the fourteen patterns in the first draft, **three
+could ever have matched anything**, and only under Pylint specifically.
+
+The tests passed because the fixtures and the patterns were written from the same memory. A pack
+written against imagination passes every test you write against the same imagination.
+
+### What replaced it
+
+Evidence. `test/fixtures/python/corpus/` holds Python files that provoke each concept;
+`scripts/capture-python-diagnostics.py` runs Pylint, Ruff and Pyright over them and records exactly
+what each emits into `test/fixtures/python/diagnostics.json`; the pack's codes and patterns are
+derived from that file, and `test/multilingual.test.ts` asserts against it. Every captured
+diagnostic must reach the right concept, every declared code and pattern must be reached by a real
+captured diagnostic, and the diagnostics the corpus provokes that are *not* about our concepts must
+stay unclaimed — over-claiming is as wrong as under-claiming, and only the second one is obvious.
+
+Two smaller things fell out of the same work:
+
+- **Codes beat patterns, so codes come first.** A rule id is the most stable identifier any analyzer
+  offers. `resolve` tries the codes a pack claims, then the message patterns, then falls back.
+  Patterns now exist for exactly one job: rescuing a *generic* rule with a *specific* message.
+  Pylance's `reportAttributeAccessIssue` fires for typos and for `None` alike, so the pack cannot
+  claim the code — only the half of the message that says `for class "None"`.
+- **`Diagnostic.code` is not one shape.** `microsoft/vscode-pylint` builds it as
+  `f"{msg_id}:{data.get('symbol')}"`, so pylint arrives as `E0601:used-before-assignment` — a string
+  no pack author would think to declare, matching neither half on its own. `codeCandidates` splits
+  it. Ruff sends `F823`, Pylance sends `reportUnboundVariable`; both split to themselves.
+
+The rule that would have caught all of this on day one is now enforced: **a pack may not declare
+message patterns without shipping the captured analyzer output they were derived from.** A code is
+checkable by inspection. A pattern is a claim about someone else's exact wording, and the only way
+to check it is to run their tool.
 
 ### The predictions that held
 
 - **Namespaced concept ids.** `python/scope.assignment` sits beside `rust/ownership.moves` with no
-  collision and no migration. Paid for in v1, collected in v2, exactly as argued.
-- **`DiagnosticSignature` as a two-shape union.** The shape was right; only the plumbing was missing.
-- **The pack schema needed no change at all.** `language = "python"` in `chapter.toml`, `patterns`
-  instead of `codes`, and the loader, validator and index took it without a line of new code.
+  collision and no migration. The premium argued for in v1 was collected in v2 exactly as described
+  — including a case nobody anticipated: Rust's `E0601` is "main function not found" and pylint's
+  `E0601` is "used-before-assignment". Same string, unrelated meanings, and the runtime was already
+  correct because `signatureKey` carries the language. A *test* was not, and reported a clash
+  between two entirely correct entries.
+- **`DiagnosticSignature` as a two-shape union.** The shape was right. Only everything behind it was
+  missing.
+- **The pack schema needed no change at all.** `language = "python"`, `patterns` alongside `codes`,
+  and the loader, validator and index took it without a line of new code.
 - **Everything hard stayed language-neutral.** Detector, learner model, interruption budget,
   conversation: untouched. That is the load-bearing claim of this document and it survived.
 
 ### The predictions that were wrong
 
 - **"Leave the code interfaces Rust-only until a second language arrives"** was right in spirit and
-  slightly too relaxed in practice. `const LANGUAGE = 'rust'` in `extension.ts` was cheap to remove,
-  but `explainCommandFor` had hard-coded `rustc --explain` *inside* `staticHint`, where a Python
-  concept would have suggested a Rust command. One line, easy to miss, learner-visible.
+  too relaxed in practice. `const LANGUAGE = 'rust'` in `extension.ts` was cheap to remove, but
+  `explainCommandFor` had `rustc --explain` hard-coded *inside* `staticHint`, where a Python concept
+  would have suggested a Rust command to a Python learner. One line, easy to miss, learner-visible.
 - **The `LanguageProvider` interface was not built, and should not be.** What Python actually needed
-  was two fields — which editor ids to watch, and whether the compiler explains itself. That is
-  `src/core/language.ts`, about forty lines, and it deliberately contains no hint logic, no scoring,
-  no scheduling and no UI. The v2 interface sketched above is still speculative; the third language
-  gets to say whether it is right.
+  was two fields: which editor ids to watch, and whether the compiler explains itself. That is
+  `src/core/language.ts`, about sixty lines, containing no hint logic, no scoring, no scheduling and
+  no UI. The v2 interface sketched earlier on this page remains speculative; the third language gets
+  to say whether it is right.
 - **Pack loading was a hard-coded array of three ids**, directly beneath a comment claiming that
-  adding content never means editing that file. Discovery (`src/core/pack/discover.ts`) makes the
-  comment true.
+  adding content never means editing that file. `src/core/pack/discover.ts` makes the comment true.
 
 ### What Python does not get
 
@@ -237,5 +288,5 @@ No course. Sixteen guided lessons are the single most expensive artifact in the 
 Python course would be a second one, not a port — the architecture generalizes, the pedagogy does
 not. Python gets the ambient tutor: it notices the error, names the concept, and talks about it.
 
-That is the honest boundary, and it matches the prediction this document opened with: *the concept
-table is the moat precisely because it is hard-won and language-specific.*
+That is the honest boundary, and it is what this document predicted: *the concept table is the moat
+precisely because it is hard-won and language-specific.*

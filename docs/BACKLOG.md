@@ -407,8 +407,16 @@ remains the single largest unvalidated assumption in the project.
 8. **E1** whenever the owner is available; it is not blocked by anything technical.
 
 **Closed since.** The second language landed (`packs/python-common-errors`), which was the only real
-test of the extensibility claim — and it found that `kind: "pattern"` had never worked. See
+test of the extensibility claim. It found two bugs, not one: `kind: "pattern"` had never worked, and
+the first fix was then written against remembered CPython *traceback* text — while VS Code
+diagnostics come from Pylance, Pylint and Ruff, none of which phrase anything that way. Three of
+fourteen patterns could ever have matched. Both are fixed, and the pack is now derived from captured
+analyzer output that ships with the repository. See
 [`language-extensibility.md`](language-extensibility.md#what-the-second-language-actually-found).
+
+Verifying that also turned up three files leaking into every published `.vsix` — the compiled
+integration harness, `CLAUDE.md`, and a dev script — now excluded and asserted in CI by
+`scripts/check-package-contents.sh`.
 
 **What is left, honestly.** Every P0 is closed. The remaining work is either blocked on someone with
 credentials (E1, E2 — release and Marketplace), blocked on hardware (F1 — Windows), or speculative

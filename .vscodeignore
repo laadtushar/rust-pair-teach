@@ -1,12 +1,23 @@
 # The published extension ships the bundle and the packs — nothing else.
+#
+# Verified by `npm run package` output, not by intention: three things had been shipping to end
+# users unnoticed — the integration-test harness in out/, this repository's CLAUDE.md, and a dev
+# script. Anything added here should be checked with
+#   unzip -Z1 *.vsix | grep -vE '^extension/(packs|dist|media)/'
 src/**
 test/**
+scripts/**
 docs/**
+out/**
 .github/**
 .claude/**
+CLAUDE.md
 node_modules/**
 *.map
+*.vsix
 tsconfig.json
+vitest.config.ts
+vitest.conformance.config.ts
 eslint.config.mjs
 .gitignore
 .vscodeignore
