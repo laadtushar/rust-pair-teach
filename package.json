@@ -118,13 +118,13 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --exclude \"**/*.manual.test.ts\"",
+    "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src test --config eslint.config.mjs",
     "build": "esbuild src/vscode/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "verify": "npm run typecheck && npm run lint && npm run test",
     "package": "vsce package --no-dependencies",
-    "conformance": "vitest run test/conformance.manual.test.ts",
+    "conformance": "vitest run --config vitest.conformance.config.ts",
     "build:integration": "esbuild test/integration/runTest.ts test/integration/suite/index.ts test/integration/suite/extension.test.ts --bundle --outdir=out --outbase=test/integration --platform=node --format=cjs --external:vscode --external:mocha --external:@vscode/test-electron --out-extension:.js=.cjs",
     "test:integration": "npm run build && npm run build:integration && node out/runTest.cjs"
   },
