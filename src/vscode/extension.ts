@@ -270,6 +270,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * `firstSeenAt` the threshold is measured against.
    */
   async function applySettings(reason: string): Promise<void> {
+    try {
+      await reapply(reason);
+    } catch (err) {
+      // Nothing here is worth taking the extension down for, and an unhandled rejection in the
+      // extension host is invisible to the learner. Keep the old settings and say so.
+      output.appendLine(`[settings] could not reapply after ${reason}: ${String(err)}`);
+    }
+  }
+
+  async function reapply(reason: string): Promise<void> {
     const settings = vscode.workspace.getConfiguration('rustPairTeacher');
     const thresholds = readConfig();
     editStream.reconfigure(thresholds);

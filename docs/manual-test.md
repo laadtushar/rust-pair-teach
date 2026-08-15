@@ -243,14 +243,18 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 2b. **M3, the offline teaching path** — the code is unit-tested end to end
    (`session.offlineTeaching` → `chat.addTutorMessage`), but no human has watched a pack hint
    arrive in the thread.
-2c. **Y1/Y2, Python** — every pattern and code in the Python pack is asserted against real captured
-   output from Pylint, Ruff and Pyright (`test/fixtures/python/diagnostics.json`), and the packaged
-   `.vsix` is verified to load and resolve both languages. What is *not* verified is the last hop:
-   that VS Code's `Diagnostic.code` carries the same string the analyzer's CLI reports. The pylint
-   composite (`E0601:used-before-assignment`) is confirmed from `microsoft/vscode-pylint`'s source;
-   the Ruff and Pylance forms are confirmed from their source but not observed in a running editor.
-   The pack carries both codes and message patterns partly for this reason — if a code arrives in an
-   unexpected shape, the message still lands.
+2c. **Y1/Y2, Python** — mostly verified, with one hop left. Verified: every code and pattern in the
+   pack is asserted against real captured output from Pylint, Ruff and Pyright
+   (`test/fixtures/python/diagnostics.json`); the packaged `.vsix` loads and resolves both
+   languages; and the integration suite confirms in a real editor that VS Code returns both
+   `Diagnostic.code` shapes as set — a plain string, and the `{value, target}` form that
+   `microsoft/vscode-pylint` produces because it sets `code_description` unconditionally. So
+   `codeOf` reads the field it thinks it does.
+
+   Still unverified: that the Ruff and Pylance *VS Code extensions* put the same strings in `code`
+   that their CLIs report. Both are confirmed from source, neither observed end to end in a running
+   editor with those extensions installed. The pack carries codes *and* message patterns partly for
+   this reason — if a code arrives in an unexpected shape, the message still lands.
 3. ~~**S1.4 pack loading**~~ — verified 2026-08-11: the paths are present in the `.vsix` at the
    location `loadPackFromDisk` expects. Runtime resolution itself is still untested, but the files
    are demonstrably where the code looks for them.
