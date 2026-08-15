@@ -52,6 +52,18 @@ export interface TutorChatOptions {
   onTelemetry?: (event: ChatTelemetryEvent) => void;
 }
 
+/**
+ * What may be changed while the tutor is running.
+ *
+ * `provider` accepts an explicit `undefined` — under `exactOptionalPropertyTypes` that is the only
+ * way to express "disconnect" as distinct from "leave it alone".
+ */
+export interface ChatReconfigure {
+  provider?: ProviderAdapter | undefined;
+  model?: string;
+  strictNoCode?: boolean;
+}
+
 /** Kept small enough to load instantly and large enough to hold a real session. */
 export const MAX_STORED_MESSAGES = 200;
 
@@ -95,6 +107,27 @@ export class TutorChat {
 
   get configured(): boolean {
     return this.opts.provider !== undefined;
+  }
+
+  /**
+   * Adopt new settings without dropping the conversation.
+   *
+   * Connecting a model used to mean reloading the window, which the setup wizard had to tell people
+   * to do — a strange first instruction from something whose whole pitch is that it notices things
+   * for you. The conversation, the spend counters and the proactive floor all survive.
+   */
+  reconfigure(next: ChatReconfigure): void {
+    const opts: TutorChatOptions = { ...this.opts };
+    if (next.model !== undefined) opts.model = next.model;
+    if (next.strictNoCode !== undefined) opts.strictNoCode = next.strictNoCode;
+    // Present-but-undefined means disconnect. Clearing the base URL has to actually stop the
+    // previous client from serving requests, not leave it quietly answering with stale settings.
+    if ('provider' in next) {
+      if (next.provider) opts.provider = next.provider;
+      else delete opts.provider;
+    }
+    this.opts = opts;
+    this.opts.onChanged?.(this.history);
   }
 
   /** Abort whatever the tutor is saying. Leaves the history consistent. */

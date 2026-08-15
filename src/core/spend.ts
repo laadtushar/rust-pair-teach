@@ -44,6 +44,16 @@ export class SpendGuard {
     this.state = loaded && loaded.day === dayOf(nowIso) ? loaded : fresh(dayOf(nowIso));
   }
 
+  /**
+   * Raise or lower the ceiling mid-session.
+   *
+   * Today's spend is kept: someone who lifts the cap after hitting it wants the rest of their day
+   * back, not a fresh budget that forgets what they already used.
+   */
+  setDailyLimit(dailyCallLimit: number): void {
+    this.opts = { ...this.opts, dailyCallLimit };
+  }
+
   /** Whether another call is permitted, and why not when it is not. */
   check(nowIso: string): { allowed: boolean; reason?: string } {
     this.rollover(nowIso);

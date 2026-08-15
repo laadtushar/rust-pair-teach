@@ -93,7 +93,7 @@ The full diagram, data model, prompting contract, and heuristics live in
 
 ```bash
 npm install
-npm run verify     # typecheck, lint, 286 tests
+npm run verify     # typecheck, lint, 293 tests
 npm run build      # bundle
 npm run package    # .vsix you can install
 ```
@@ -104,7 +104,8 @@ and click the sensei icon.
 **Conversation needs a model; the course does not.** Run **Rust Pair Teacher: Set up a teaching
 model** and pick Ollama — free, local, no key, and nothing leaves your machine. Keys go to the OS
 keychain, never to `settings.json`. A ChatGPT or Claude subscription is *not* API access and the
-extension will tell you so rather than failing with a bare 401.
+extension will tell you so rather than failing with a bare 401. Settings and keys take effect
+immediately; there is nothing to reload.
 
 **Conversation without a model.** With nothing configured the tutor still teaches — the chapter
 packs' own material arrives as tutor messages in the same conversation. There is no second panel

@@ -55,7 +55,7 @@ export interface DetectorOptions {
  * spoken, so the thresholds can be tuned against real behaviour before anything is built on top.
  */
 export class MomentDetector {
-  private readonly config: DetectorConfig;
+  private config: DetectorConfig;
   private readonly editStream: EditStream;
   private readonly seen: Set<string>;
   private readonly onCleared: DetectorOptions['onCleared'];
@@ -66,6 +66,17 @@ export class MomentDetector {
   private lastSignatureFire = new Map<string, number>();
 
   ambient: boolean;
+
+  /**
+   * Adopt new thresholds without losing what is being tracked.
+   *
+   * A learner who narrows `idleThresholdMs` while staring at an error should get the benefit on
+   * that error, not on the next one — and rebuilding the detector would forget every diagnostic's
+   * `firstSeenAt`, which is the input to the very threshold they just changed.
+   */
+  reconfigure(config: DetectorConfig): void {
+    this.config = config;
+  }
 
   constructor(opts: DetectorOptions) {
     this.config = opts.config;

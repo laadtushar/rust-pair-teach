@@ -178,3 +178,37 @@ describe('MomentDetector cleared reporting', () => {
     expect(firstSeen).toBe(5_000);
   });
 });
+
+describe('settings applied while running', () => {
+  it('adopts a narrower threshold on the error already being tracked', () => {
+    // The learner shortens idleThresholdMs *because* they are staring at an error and want the
+    // tutor sooner. Rebuilding the detector would forget its firstSeenAt and start the clock over,
+    // which is the opposite of what they asked for.
+    const stream = new EditStream(defaultConfig);
+    const d = new MomentDetector({
+      config: { ...defaultConfig, diagnosticAgeMs: 60_000 },
+      editStream: stream,
+    });
+
+    d.onDiagnostics(URI, [obs('E0382')], 0);
+    // Old enough to be a struggle under the new threshold, but not under the old one.
+    expect(d.tick(30_000).filter((x) => x.fired)).toHaveLength(0);
+
+    d.reconfigure({ ...defaultConfig, diagnosticAgeMs: 10_000 });
+    const fired = d.tick(31_000).filter((x) => x.fired);
+    expect(fired, 'the error already seen for 31s should now qualify').toHaveLength(1);
+  });
+
+  it('keeps the churn history when the edit stream is reconfigured', () => {
+    const stream = new EditStream(defaultConfig);
+    // First sight of a file is not an edit, so three snapshots make two touches.
+    stream.onEdit(URI, 'a\n', 0);
+    stream.onEdit(URI, 'b\n', 1_000);
+    stream.onEdit(URI, 'c\n', 2_000);
+    expect(stream.churningRegions(2_500), 'two touches, default threshold is three').toEqual([]);
+
+    stream.reconfigure({ ...defaultConfig, churnTouches: 2 });
+    // The touches already recorded count toward the new, lower threshold.
+    expect(stream.churningRegions(2_500).length).toBeGreaterThan(0);
+  });
+});

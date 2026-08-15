@@ -31,6 +31,13 @@ import { TutorSidebar, type SidebarAction } from './sidebar.js';
 
 const TICK_MS = 1_000;
 
+interface ProviderConfig {
+  provider?: ProviderAdapter;
+  model: string;
+  /** A credential problem worth telling the learner about, or null. */
+  problem: string | null;
+}
+
 /**
  * The VS Code adapter — the only place in the project that imports `vscode`.
  *
@@ -99,6 +106,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // One provider, shared. Constructing it twice meant two clients, a duplicated [provider] log
   // line, and the credential warning firing twice on activation.
   const providerConfig = await providerFromSettings(output, context.secrets);
+  let lastCredentialWarning = warnAboutCredential(providerConfig.problem, null);
 
   const spendKey = 'rustPairTeacher.spend';
   const spend = new SpendGuard(
@@ -117,7 +125,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let chatError: string | null = null;
   const chatHistoryKey = 'rustPairTeacher.chatHistory';
   const chat = new TutorChat({
-    ...providerConfig,
+    model: providerConfig.model,
+    ...(providerConfig.provider ? { provider: providerConfig.provider } : {}),
     store: {
       // workspaceState, not globalState: a conversation about one project must not surface in
       // another.
@@ -245,6 +254,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (resolution) telemetry.resolved(resolution);
     },
   });
+
+  // ---- settings, applied while running -------------------------------------
+
+  /**
+   * Adopt changed settings without a window reload.
+   *
+   * Every setting used to be read exactly once, at activation. Narrowing `idleThresholdMs` to see
+   * the tutor sooner did nothing, silently, until you happened to reload — and the setup wizard had
+   * to end by *instructing* people to reload, which is a strange first experience from something
+   * whose pitch is that it notices things for you.
+   *
+   * Detector and edit-stream state deliberately survive: someone who shortens the threshold while
+   * staring at an error wants it applied to that error, and rebuilding would forget the
+   * `firstSeenAt` the threshold is measured against.
+   */
+  async function applySettings(reason: string): Promise<void> {
+    const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+    const thresholds = readConfig();
+    editStream.reconfigure(thresholds);
+    detector.reconfigure(thresholds);
+    detector.ambient = settings.get('ambient', true);
+    telemetry.enabled = settings.get('telemetry', false);
+    spend.setDailyLimit(settings.get('dailyCallLimit', DEFAULT_DAILY_CALL_LIMIT));
+
+    const next = await providerFromSettings(output, context.secrets);
+    lastCredentialWarning = warnAboutCredential(next.problem, lastCredentialWarning);
+    chat.reconfigure({
+      provider: next.provider,
+      model: next.model,
+      strictNoCode: settings.get('strictNoCode', true),
+    });
+
+    output.appendLine(`[settings] reapplied after ${reason}`);
+    refreshSidebar();
+  }
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('rustPairTeacher')) void applySettings('a settings change');
+    }),
+    // The API key does not live in settings, so it needs its own listener — otherwise storing a key
+    // is the one part of setup that still demands a reload.
+    context.secrets.onDidChange((e) => {
+      if (e.key === API_KEY_SECRET) void applySettings('an API key change');
+    })
+  );
 
   // ---- candidate log -------------------------------------------------------
   const logUri = vscode.Uri.joinPath(context.globalStorageUri, 'candidates.jsonl');
@@ -648,7 +703,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       output.appendLine(`[provider] connection test: ${result.message}`);
       if (result.ok) {
         void vscode.window.showInformationMessage(
-          `${result.message} Reload the window to start using it.`
+          `${result.message} It is live now — no reload needed.`
         );
       } else {
         void vscode.window.showErrorMessage(result.message);
@@ -668,7 +723,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await context.secrets.store(API_KEY_SECRET, key.trim());
       void vscode.window.showInformationMessage(
-        'Rust Pair Teacher: API key stored. Reload the window to use it.'
+        'Rust Pair Teacher: API key stored, and in use now.'
       );
     })
   );
@@ -710,7 +765,7 @@ export const API_KEY_SECRET = 'rustPairTeacher.apiKey';
 async function providerFromSettings(
   output: vscode.OutputChannel,
   secrets: vscode.SecretStorage
-): Promise<{ provider?: ProviderAdapter; model: string }> {
+): Promise<ProviderConfig> {
   const settings = vscode.workspace.getConfiguration('rustPairTeacher');
   const baseUrl = settings.get<string>('baseUrl', '').trim();
   const model = settings.get<string>('model', '').trim();
@@ -719,27 +774,38 @@ async function providerFromSettings(
     output.appendLine(
       '[provider] none configured — teaching from the built-in material only. Set rustPairTeacher.baseUrl and .model to personalize.'
     );
-    return { model: model || 'unconfigured' };
+    return { model: model || 'unconfigured', problem: null };
   }
 
   const apiKey = (await secrets.get(API_KEY_SECRET))?.trim();
 
-  // Say so now, plainly, rather than letting it surface as a bare 401 mid-struggle.
+  // Reported rather than shown here: whether a dialog is warranted depends on whether this is the
+  // first time we have seen this particular problem, which only the caller knows.
   const problem = diagnoseCredential(baseUrl, apiKey);
-  if (problem) {
-    output.appendLine(`[provider] ${problem.message}`);
-    void vscode.window
-      .showWarningMessage(problem.message, 'Set up a model')
-      .then((choice) => {
-        if (choice) void vscode.commands.executeCommand('rustPairTeacher.setupModel');
-      });
-  }
+  if (problem) output.appendLine(`[provider] ${problem.message}`);
 
   output.appendLine(`[provider] ${baseUrl} (${model})${apiKey ? '' : ' — no key stored'}`);
   return {
     model,
     provider: new OpenAiCompatibleProvider({ baseUrl, ...(apiKey ? { apiKey } : {}) }),
+    problem: problem ? problem.message : null,
   };
+}
+
+/**
+ * Warn about a credential problem, but only when it is news.
+ *
+ * Settings are re-read on every change now, and `onDidChangeConfiguration` can fire more than once
+ * for a single edit. Warning unconditionally would stack identical dialogs on top of a learner who
+ * is mid-edit; warning never would silently drop the one diagnostic that saves someone from pasting
+ * a ChatGPT URL and wondering why nothing answers. So: warn when the problem changes.
+ */
+function warnAboutCredential(problem: string | null, lastShown: string | null): string | null {
+  if (problem === null || problem === lastShown) return problem;
+  void vscode.window.showWarningMessage(problem, 'Set up a model').then((choice) => {
+    if (choice) void vscode.commands.executeCommand('rustPairTeacher.setupModel');
+  });
+  return problem;
 }
 
 function codeOf(d: vscode.Diagnostic): string | undefined {

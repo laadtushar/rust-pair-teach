@@ -3,6 +3,20 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.14.0 — settings take effect when you change them
+
+Every setting used to be read exactly once, when the extension started. Shortening the delay before
+the tutor speaks did nothing — silently — until you happened to reload the window. And the setup
+wizard had to *end* by telling you to reload, which is a strange first instruction from something
+whose whole pitch is that it notices things for you.
+
+All of it applies immediately now: the thresholds, ambient watching, the no-code rule, the daily
+call cap, telemetry, and the model itself. Connect a model and it answers your next message. Paste
+an API key and it is in use. Nothing to reload.
+
+If you narrow the delay while staring at an error, it applies to *that* error — the tutor does not
+forget how long you have been stuck just because you adjusted a number.
+
 ## 0.13.0 — it speaks Python too
 
 Not a course — the sixteen lessons are still Rust only, and a Python course would be a second

@@ -293,6 +293,59 @@ describe('cancellation (B2)', () => {
   });
 });
 
+describe('settings applied while running', () => {
+  it('starts answering the moment a model is connected, with the conversation intact', async () => {
+    const c = chat(undefined);
+    await c.say('are you there?', CTX, 1);
+    expect(c.configured).toBe(false);
+    expect(c.messages.map((m) => m.speaker)).toEqual(['learner']);
+
+    c.reconfigure({ provider: provider('I am now.'), model: 'm' });
+    expect(c.configured).toBe(true);
+
+    await c.say('and now?', CTX, 2);
+    // Four turns: the unanswered question survived being reconfigured around.
+    expect(c.messages.map((m) => m.speaker)).toEqual(['learner', 'learner', 'tutor']);
+  });
+
+  it('actually disconnects when the provider is cleared', async () => {
+    const errors: string[] = [];
+    const c = chat(provider('hi'), { onError: (e: string) => errors.push(e) });
+    await c.say('one', CTX, 1);
+
+    c.reconfigure({ provider: undefined });
+    expect(c.configured).toBe(false);
+
+    await c.say('two', CTX, 2);
+    // Clearing the base URL must stop the old client, not leave it quietly serving.
+    expect(errors.at(-1)).toMatch(/No model is connected/);
+  });
+
+  it('leaves the provider alone when the key is absent from the update', async () => {
+    const c = chat(provider('hi'));
+    c.reconfigure({ strictNoCode: false });
+    expect(c.configured).toBe(true);
+  });
+
+  it('applies a changed no-code rule to the next reply', async () => {
+    const long = '```rust\nlet a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\n```';
+    const c = chat(provider(long));
+    await c.say('show me', CTX, 1);
+    expect(c.messages.at(-1)!.text).toMatch(/you will remember it far better/);
+
+    c.reconfigure({ strictNoCode: false });
+    await c.say('really, show me', CTX, 2);
+    expect(c.messages.at(-1)!.text).toContain('let d = 4;');
+  });
+
+  it('tells the view that something changed', () => {
+    const seen: number[] = [];
+    const c = chat(provider('hi'), { onChanged: (h: readonly unknown[]) => seen.push(h.length) });
+    c.reconfigure({ model: 'other' });
+    expect(seen.length).toBeGreaterThan(0);
+  });
+});
+
 describe('conversation counters (A5)', () => {
   function counted(p: ProviderAdapter | undefined, extra = {}) {
     const events: ChatTelemetryEvent[] = [];

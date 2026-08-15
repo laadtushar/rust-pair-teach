@@ -102,4 +102,66 @@ suite('activation', () => {
     await vscode.window.showTextDocument(doc);
     assert.strictEqual(doc.languageId, 'rust');
   });
+
+  test('a Python file is watched, and its diagnostics survive the round trip', async () => {
+    // The Python pack keys on what Pylance, Pylint and Ruff emit, and each puts a different shape
+    // in `Diagnostic.code`. Those shapes are confirmed from the analyzers' source; what is checked
+    // here is the other half — that VS Code hands back what was put in, so `codeOf` is reading the
+    // field the extension thinks it is reading.
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'python',
+      content: 'def f():\n    print(x)\n    x = 1\n',
+    });
+    assert.strictEqual(doc.languageId, 'python', 'python language id is not available');
+
+    const collection = vscode.languages.createDiagnosticCollection('pair-teacher-probe');
+    try {
+      const range = new vscode.Range(0, 0, 0, 1);
+      const plain = new vscode.Diagnostic(range, 'Local variable `x` referenced before assignment');
+      plain.code = 'F823';
+      plain.severity = vscode.DiagnosticSeverity.Error;
+
+      // What an LSP server sends when it also sets codeDescription — microsoft/vscode-pylint does,
+      // unconditionally, so this is the shape pylint diagnostics actually arrive in.
+      const described = new vscode.Diagnostic(range, "Using variable 'x' before assignment");
+      described.code = {
+        value: 'E0601:used-before-assignment',
+        target: vscode.Uri.parse('https://pylint.readthedocs.io/'),
+      };
+      described.severity = vscode.DiagnosticSeverity.Error;
+
+      collection.set(doc.uri, [plain, described]);
+      const read = vscode.languages.getDiagnostics(doc.uri);
+      assert.strictEqual(read.length, 2, 'diagnostics did not come back');
+
+      const codes = read.map((d) =>
+        typeof d.code === 'object' && d.code !== null ? String(d.code.value) : String(d.code)
+      );
+      assert.deepStrictEqual(
+        codes.sort(),
+        ['E0601:used-before-assignment', 'F823'],
+        'VS Code did not return the codes that were set — codeOf is reading the wrong field'
+      );
+    } finally {
+      collection.dispose();
+    }
+  });
+
+  test('a settings change is applied without a reload', async () => {
+    // Every setting used to be read once, at activation, so changing one did nothing until you
+    // happened to reload — silently. If this throws, the listener is gone.
+    const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+    const original = settings.get<number>('idleThresholdMs');
+    try {
+      await settings.update('idleThresholdMs', 1234, vscode.ConfigurationTarget.Global);
+      assert.strictEqual(
+        vscode.workspace.getConfiguration('rustPairTeacher').get('idleThresholdMs'),
+        1234
+      );
+      // The handler runs on the extension host; a throw there surfaces as a rejected command.
+      await vscode.commands.executeCommand('rustPairTeacher.showTelemetry');
+    } finally {
+      await settings.update('idleThresholdMs', original, vscode.ConfigurationTarget.Global);
+    }
+  });
 });

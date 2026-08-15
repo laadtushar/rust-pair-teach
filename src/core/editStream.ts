@@ -55,6 +55,11 @@ export class EditStream {
 
   constructor(private config: DetectorConfig) {}
 
+  /** Adopt new thresholds, keeping the snapshots and churn history already recorded. */
+  reconfigure(config: DetectorConfig): void {
+    this.config = config;
+  }
+
   /** Record a new snapshot. Returns the changed range, or null for a no-op edit. */
   onEdit(uri: string, text: string, at: number): ChangedRange | null {
     const prev = this.files.get(uri);

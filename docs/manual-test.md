@@ -71,7 +71,7 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 
 **W3. The subscription trap**
 1. Set `rustPairTeacher.baseUrl` to `https://chatgpt.com/backend-api` manually.
-2. Reload the window.
+2. Do **not** reload — settings are applied live since 0.14.0, and this step is checking that.
 3. **Expect:** a warning explaining that subscriptions are not API access, with a *Set up a model* button.
 
 **W4. Session token**
@@ -83,7 +83,8 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 ## Conversation
 
 **C1. It speaks first**
-1. With a model connected, reload the window and open the panel.
+1. With a model connected, reload the window and open the panel. (Reload here is checking history
+   persistence, not configuration.)
 2. **Expect:** a greeting appears unprompted within a few seconds.
 
 **C2. Talking back**
