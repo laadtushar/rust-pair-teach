@@ -90,7 +90,7 @@ describe('connection test', () => {
         return { text: 'ready' };
       }),
       'gpt-4o-mini',
-      () => t
+      { now: () => t }
     );
     expect(result.ok).toBe(true);
     expect(result.latencyMs).toBe(250);

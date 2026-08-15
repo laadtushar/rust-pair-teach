@@ -1,3 +1,4 @@
+import { systemClock, type Clock } from '../clock.js';
 import { ProviderError, type ProviderAdapter } from './types.js';
 
 /**
@@ -141,9 +142,9 @@ export interface ConnectionResult {
 export async function testConnection(
   provider: ProviderAdapter,
   model: string,
-  now: () => number = Date.now
+  clock: Clock = systemClock
 ): Promise<ConnectionResult> {
-  const started = now();
+  const started = clock.now();
   try {
     const completion = await provider.complete(
       [
@@ -154,7 +155,7 @@ export async function testConnection(
     );
     return {
       ok: true,
-      latencyMs: now() - started,
+      latencyMs: clock.now() - started,
       message: `Connected. The model replied: ${completion.text.trim().slice(0, 40)}`,
     };
   } catch (err) {
