@@ -237,9 +237,12 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 ### Known-unverified, highest risk first
 
 1. **L4 command steps** — terminal shell integration is not universal; unproven on any shell.
-2. **Everything in C** — the chat UI has never rendered in a real webview. The integration suite
-   covers activation, contributions and the egress document's contents, not rendering, so this
-   stays manual-only.
+2. **Everything in C** — narrowed. The panel's HTML now renders and is driven in a real browser
+   (`npm run test:webview`): escaping, the CSP nonce, markdown, the delegated click handler, and
+   the claim that a half-typed message survives a streaming re-render. What is still unobserved is
+   the panel inside VS Code specifically — theme variables resolving to real colours, the webview
+   iframe's own CSP layered on top of ours, and whether any of it looks right. A browser is not an
+   editor.
 2b. **M3, the offline teaching path** — the code is unit-tested end to end
    (`session.offlineTeaching` → `chat.addTutorMessage`), but no human has watched a pack hint
    arrive in the thread.

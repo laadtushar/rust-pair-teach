@@ -41,6 +41,28 @@ jobs:
       - name: Published package contents
         run: ./scripts/check-package-contents.sh
 
+  # The panel, rendered in a real browser. Separate because it downloads a Chromium, and because a
+  # rendering failure should be distinguishable at a glance from a logic failure.
+  webview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Escaping, the CSP nonce, and the claim that a half-typed message survives a streaming
+      # re-render. None of it is checkable from a string comparison.
+      - name: Panel rendering tests
+        run: npm run test:webview
+
   # Separate job: it downloads a real VS Code and needs a virtual display, so a failure here
   # should be distinguishable at a glance from a unit-test failure.
   integration:

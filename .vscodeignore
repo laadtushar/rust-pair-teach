@@ -15,9 +15,8 @@ CLAUDE.md
 node_modules/**
 *.map
 *.vsix
-tsconfig.json
-vitest.config.ts
-vitest.conformance.config.ts
+tsconfig*.json
+vitest*.config.ts
 eslint.config.mjs
 .gitignore
 .vscodeignore

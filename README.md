@@ -93,7 +93,8 @@ The full diagram, data model, prompting contract, and heuristics live in
 
 ```bash
 npm install
-npm run verify     # typecheck, lint, 293 tests
+npm run verify         # typecheck, lint, 293 unit tests
+npm run test:webview   # the panel, rendered and driven in a real browser (13 tests)
 npm run build      # bundle
 npm run package    # .vsix you can install
 ```

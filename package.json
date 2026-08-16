@@ -68,7 +68,7 @@
         "rustPairTeacher.idleThresholdMs": {
           "type": "number",
           "default": 8000,
-          "description": "How long the learner must be idle before a lingering diagnostic becomes a candidate. Provisional — tuned from dogfooding."
+          "description": "How long the learner must be idle before a lingering diagnostic becomes a candidate. Provisional \u2014 tuned from dogfooding."
         },
         "rustPairTeacher.diagnosticAgeMs": {
           "type": "number",
@@ -78,7 +78,7 @@
         "rustPairTeacher.baseUrl": {
           "type": "string",
           "default": "",
-          "markdownDescription": "OpenAI-compatible endpoint. Leave empty to teach from the built-in material only.\n\n- **Ollama** (local, free, nothing leaves your machine): `http://localhost:11434/v1`\n- **OpenAI API**: `https://api.openai.com/v1` — billed separately from any ChatGPT subscription\n- **OpenRouter**: `https://openrouter.ai/api/v1`\n\nA ChatGPT Plus/Pro or Claude Pro/Max subscription is **not** API access and cannot be used here. Run *Set up a teaching model* to configure this interactively."
+          "markdownDescription": "OpenAI-compatible endpoint. Leave empty to teach from the built-in material only.\n\n- **Ollama** (local, free, nothing leaves your machine): `http://localhost:11434/v1`\n- **OpenAI API**: `https://api.openai.com/v1` \u2014 billed separately from any ChatGPT subscription\n- **OpenRouter**: `https://openrouter.ai/api/v1`\n\nA ChatGPT Plus/Pro or Claude Pro/Max subscription is **not** API access and cannot be used here. Run *Set up a teaching model* to configure this interactively."
         },
         "rustPairTeacher.model": {
           "type": "string",
@@ -88,7 +88,7 @@
         "rustPairTeacher.telemetry": {
           "type": "boolean",
           "default": false,
-          "description": "Collect local, anonymous counts about how the tutor is working — moments fired, how often it speaks first, whether you answer, how often problems get solved. Never leaves your machine, contains no code, file paths or conversation text, and you can read it with the Show my learning telemetry command."
+          "description": "Collect local, anonymous counts about how the tutor is working \u2014 moments fired, how often it speaks first, whether you answer, how often problems get solved. Never leaves your machine, contains no code, file paths or conversation text, and you can read it with the Show my learning telemetry command."
         },
         "rustPairTeacher.strictNoCode": {
           "type": "boolean",
@@ -122,7 +122,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src test --config eslint.config.mjs",
@@ -131,7 +131,8 @@
     "package": "vsce package --no-dependencies",
     "conformance": "vitest run --config vitest.conformance.config.ts",
     "build:integration": "esbuild test/integration/runTest.ts test/integration/suite/index.ts test/integration/suite/extension.test.ts --bundle --outdir=out --outbase=test/integration --platform=node --format=cjs --external:vscode --external:mocha --external:@vscode/test-electron --out-extension:.js=.cjs",
-    "test:integration": "npm run build && npm run build:integration && node out/runTest.cjs"
+    "test:integration": "npm run build && npm run build:integration && node out/runTest.cjs",
+    "test:webview": "vitest run --config vitest.webview.config.ts"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -143,6 +144,7 @@
     "eslint": "^9.17.0",
     "glob": "^13.0.6",
     "mocha": "^11.8.0",
+    "playwright": "^1.62.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
     "vitest": "^2.1.8"
