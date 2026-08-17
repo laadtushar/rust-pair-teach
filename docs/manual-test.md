@@ -256,8 +256,12 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
 
    Ruff is now asked directly: CI's `analyzer` job installs the real extension, opens
    `scope_assignment.py`, and asserts the diagnostic that actually arrives resolves to
-   `python/scope.assignment`. That job is `continue-on-error` — a Marketplace outage is not this
-   project's failure — so read its result rather than assuming the build being green covers it.
+   `python/scope.assignment` **via its rule code**, not merely via the message. The distinction
+   matters — `resolve` falls back to patterns, and Ruff's wording matches one, so a bare
+   "it resolved" assertion would have passed with the code path entirely broken.
+
+   That job is `continue-on-error`, so its badge reads green whether or not it passed. Read the log,
+   which prints every code and message Ruff sent.
 
    Still unverified: Pylance. It is proprietary and licensed to official builds, so its code shape
    stays source-confirmed only. The pack carries codes *and* message patterns partly for this

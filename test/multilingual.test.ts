@@ -174,6 +174,24 @@ describe('the code forms each analyzer actually sends', () => {
     ]);
   });
 
+  it('prefers the code even when the message would also match a pattern', () => {
+    // A real overlap, not a hypothetical: Ruff sends F823 with the message "Local variable `x`
+    // referenced before assignment", and the pack claims both the code and that wording. Because
+    // either route lands on the same concept, a test that only checked the concept would pass with
+    // the code path completely broken — which is exactly the hole the analyzer integration test had
+    // until this was noticed. Pinning the order here makes that failure visible for free.
+    const message = 'Local variable `TOTAL` referenced before assignment';
+    expect(resolver.resolve('python', 'F823', message)).toEqual({
+      kind: 'code',
+      language: 'python',
+      value: 'F823',
+    });
+    // Same message, code withheld: the pattern is the fallback, and it still teaches.
+    const byMessage = resolver.resolve('python', undefined, message);
+    expect(byMessage.kind).toBe('pattern');
+    expect(index.get(signatureKey(byMessage))?.id).toBe('python/scope.assignment');
+  });
+
   it('recovers a concept from the message when the rule code is too generic to claim', () => {
     // reportAttributeAccessIssue fires for typos as well as for None, so the pack cannot claim the
     // code — only the half of the message that is specifically about None.

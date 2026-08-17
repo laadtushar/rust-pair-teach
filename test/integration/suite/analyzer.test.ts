@@ -81,13 +81,42 @@ suite('what a real analyzer sends', () => {
     }
     const resolver = new SignatureResolver(packs);
 
-    const taught = diagnostics
-      .map((d) => index.get(signatureKey(resolver.resolve('python', codeOf(d), d.message))))
+    // Print what arrived, unconditionally. A passing assertion tells you the chain works; the log
+    // is what lets anyone check *which* link carried it.
+    console.log(`Ruff sent ${String(diagnostics.length)} diagnostic(s):`);
+    for (const d of diagnostics) {
+      console.log(`  code=${JSON.stringify(d.code)} message=${JSON.stringify(d.message)}`);
+    }
+
+    const resolved = diagnostics.map((d) => ({
+      signature: resolver.resolve('python', codeOf(d), d.message),
+      raw: d,
+    }));
+    const taught = resolved
+      .map((r) => index.get(signatureKey(r.signature)))
       .filter((id): id is string => id !== undefined);
 
     assert.ok(
       taught.includes('python/scope.assignment'),
       `no diagnostic reached python/scope.assignment. Ruff sent:\n  ${described.join('\n  ')}`
+    );
+
+    // The point of the whole job. `resolve` falls back to message patterns, and Ruff's wording
+    // happens to match one — so a bare "it resolved" assertion would pass even if the code were
+    // absent or unrecognised, and would prove nothing about `Diagnostic.code` at all.
+    const viaCode = resolved.filter(
+      (r) => r.signature.kind === 'code' && index.get(signatureKey(r.signature)) !== undefined
+    );
+    assert.ok(
+      viaCode.length > 0,
+      `every diagnostic resolved by message text, not by its rule code — the code claim is unproven. Ruff sent:\n  ${described.join('\n  ')}`
+    );
+
+    const codes = viaCode.map((r) => r.signature.value);
+    console.log(`resolved via rule code: ${codes.join(', ')}`);
+    assert.ok(
+      codes.includes('F823'),
+      `expected F823 among the codes the pack matched, got: ${codes.join(', ') || '(none)'}`
     );
   });
 
