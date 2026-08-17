@@ -637,11 +637,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await flush();
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(logUri));
     }),
-    vscode.commands.registerCommand('rustPairTeacher.toggleAmbient', () => {
-      detector.ambient = !detector.ambient;
-      telemetry.ambientToggled(detector.ambient);
+    vscode.commands.registerCommand('rustPairTeacher.toggleAmbient', async () => {
+      // Writes the setting rather than the runtime flag, so the command and the setting are the
+      // same fact. Mutating `detector.ambient` directly used to be fine; once settings became live,
+      // `applySettings` reapplies `ambient` from configuration on *every* change, so a toggle would
+      // silently revert the next time any unrelated setting moved — and switching ambient off is
+      // the single loudest signal this project collects, so losing it is not a small thing.
+      const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+      const next = !settings.get('ambient', true);
+      await settings.update('ambient', next, vscode.ConfigurationTarget.Global);
+      telemetry.ambientToggled(next);
       void vscode.window.showInformationMessage(
-        `Rust Pair Teacher: ambient watching ${detector.ambient ? 'on' : 'off'}`
+        `Rust Pair Teacher: ambient watching ${next ? 'on' : 'off'}`
       );
     }),
     vscode.commands.registerCommand('rustPairTeacher.teachMe', () => teachOnDemand(Date.now())),

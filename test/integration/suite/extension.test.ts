@@ -147,6 +147,35 @@ suite('activation', () => {
     }
   });
 
+  test('toggling ambient survives an unrelated settings change', async () => {
+    // A regression introduced by making settings live: the toggle used to mutate a runtime flag,
+    // while `applySettings` reapplies `ambient` from configuration on every change — so switching
+    // ambient off and then touching any other setting would quietly switch it back on. Turning
+    // ambient off is the loudest signal this project collects; losing it silently is the worst
+    // possible way to lose it.
+    const settings = () => vscode.workspace.getConfiguration('rustPairTeacher');
+    const original = settings().get<boolean>('ambient');
+    const originalAge = settings().get<number>('diagnosticAgeMs');
+    try {
+      await vscode.commands.executeCommand('rustPairTeacher.toggleAmbient');
+      assert.strictEqual(settings().get('ambient'), false, 'the toggle did not reach the setting');
+
+      // Anything else changing must not disturb it.
+      await settings().update('diagnosticAgeMs', 12_345, vscode.ConfigurationTarget.Global);
+      assert.strictEqual(
+        settings().get('ambient'),
+        false,
+        'an unrelated settings change turned ambient back on'
+      );
+
+      await vscode.commands.executeCommand('rustPairTeacher.toggleAmbient');
+      assert.strictEqual(settings().get('ambient'), true, 'toggling back on did not stick');
+    } finally {
+      await settings().update('ambient', original, vscode.ConfigurationTarget.Global);
+      await settings().update('diagnosticAgeMs', originalAge, vscode.ConfigurationTarget.Global);
+    }
+  });
+
   test('the detector fires on a real diagnostic and logs the decision', async function () {
     // The core loop — diagnostic appears, ages, learner is idle, decision recorded — has only ever
     // run against a stub. This runs it in a real editor.
@@ -158,6 +187,7 @@ suite('activation', () => {
     // being ignored.
     this.timeout(60_000);
 
+    const startedAt = Date.now();
     const settings = vscode.workspace.getConfiguration('rustPairTeacher');
     const originalAge = settings.get<number>('diagnosticAgeMs');
     const originalIdle = settings.get<number>('idleThresholdMs');
@@ -186,9 +216,34 @@ suite('activation', () => {
       await vscode.commands.executeCommand('rustPairTeacher.openCandidateLog');
       const log = vscode.window.activeTextEditor?.document.getText() ?? '';
 
+      // Parsed, not substring-matched. The extension logs *suppressed* decisions too — that is the
+      // whole point of the log — so `log.includes('E0502')` would pass on a decision the detector
+      // considered and then skipped, which is the opposite of what this test is named for. It
+      // would also pass on a line left behind by an earlier run against the same user-data-dir,
+      // hence the timestamp check.
+      interface LoggedDecision {
+        at: number;
+        fired: boolean;
+        suppressedBy?: string;
+        signature?: { value?: string };
+      }
+      const decisions = log
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .map((l) => JSON.parse(l) as LoggedDecision);
+
+      const ours = decisions.filter(
+        (d) => d.signature?.value === 'E0502' && d.at >= startedAt
+      );
       assert.ok(
-        log.includes('E0502'),
-        `the candidate log has no decision about E0502, so either the detector never saw it or the shortened threshold was ignored. Log was:\n${log || '(empty)'}`
+        ours.length > 0,
+        `no decision about E0502 was recorded during this test, so either the detector never saw it or the shortened threshold was ignored. Log was:\n${log || '(empty)'}`
+      );
+      assert.ok(
+        ours.some((d) => d.fired),
+        `E0502 was considered but every decision was suppressed (${ours
+          .map((d) => d.suppressedBy ?? '?')
+          .join(', ')}) — the detector did not actually fire`
       );
     } finally {
       collection.dispose();

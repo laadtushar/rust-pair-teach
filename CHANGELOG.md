@@ -3,6 +3,14 @@
 Written for learners, not for the compiler. "The tutor now stays quiet during rapid typo fixes"
 beats "tuned `idleThresholdMs`".
 
+## 0.14.1 — a fix for something 0.14.0 broke
+
+Switching ambient watching off, then changing any other setting, quietly switched it back on. The
+toggle command changed one thing and the settings did another, and making settings live in 0.14.0
+is what put the two in conflict. Turning the tutor's watching off is the clearest way you can tell
+it to leave you alone, so it now writes the setting rather than a temporary flag — and it stays off
+until you say otherwise.
+
 ## 0.14.0 — settings take effect when you change them
 
 Every setting used to be read exactly once, when the extension started. Shortening the delay before
