@@ -147,6 +147,56 @@ suite('activation', () => {
     }
   });
 
+  test('the detector fires on a real diagnostic and logs the decision', async function () {
+    // The core loop — diagnostic appears, ages, learner is idle, decision recorded — has only ever
+    // run against a stub. This runs it in a real editor.
+    //
+    // It doubles as proof that live settings work. Under the shipped defaults a diagnostic must
+    // persist 20 seconds before it counts as a struggle, so a decision appearing within a few
+    // seconds is only possible if the threshold change actually took effect. Asserting the setting
+    // "does not throw", which is all the previous test did, would not have caught it silently
+    // being ignored.
+    this.timeout(60_000);
+
+    const settings = vscode.workspace.getConfiguration('rustPairTeacher');
+    const originalAge = settings.get<number>('diagnosticAgeMs');
+    const originalIdle = settings.get<number>('idleThresholdMs');
+    const collection = vscode.languages.createDiagnosticCollection('pair-teacher-detector-probe');
+
+    try {
+      await settings.update('diagnosticAgeMs', 1_000, vscode.ConfigurationTarget.Global);
+      await settings.update('idleThresholdMs', 100, vscode.ConfigurationTarget.Global);
+
+      const files = await vscode.workspace.findFiles('**/*.rs', undefined, 1);
+      assert.ok(files.length > 0, 'no .rs file in the fixture workspace');
+      const doc = await vscode.workspace.openTextDocument(files[0]!);
+      await vscode.window.showTextDocument(doc);
+
+      const diagnostic = new vscode.Diagnostic(
+        new vscode.Range(0, 0, 0, 1),
+        'cannot borrow `items` as mutable because it is also borrowed as immutable',
+        vscode.DiagnosticSeverity.Error
+      );
+      diagnostic.code = 'E0502';
+      collection.set(doc.uri, [diagnostic]);
+
+      // The extension ticks once a second; give it several, plus the age threshold.
+      await new Promise((r) => setTimeout(r, 6_000));
+
+      await vscode.commands.executeCommand('rustPairTeacher.openCandidateLog');
+      const log = vscode.window.activeTextEditor?.document.getText() ?? '';
+
+      assert.ok(
+        log.includes('E0502'),
+        `the candidate log has no decision about E0502, so either the detector never saw it or the shortened threshold was ignored. Log was:\n${log || '(empty)'}`
+      );
+    } finally {
+      collection.dispose();
+      await settings.update('diagnosticAgeMs', originalAge, vscode.ConfigurationTarget.Global);
+      await settings.update('idleThresholdMs', originalIdle, vscode.ConfigurationTarget.Global);
+    }
+  });
+
   test('a settings change is applied without a reload', async () => {
     // Every setting used to be read once, at activation, so changing one did nothing until you
     // happened to reload — silently. If this throws, the listener is gone.
