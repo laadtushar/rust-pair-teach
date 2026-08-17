@@ -82,6 +82,29 @@ jobs:
       - name: Integration tests in real VS Code
         run: xvfb-run -a npm run test:integration
 
+  # Asks the real Ruff extension what it puts in `Diagnostic.code`, rather than trusting a reading
+  # of its source. Separate from `integration` because that run uses --disable-extensions on
+  # purpose, and separate from `verify` because it reaches the Marketplace.
+  #
+  # continue-on-error: a Marketplace outage must not turn the build red. Its result is evidence
+  # about someone else's tool, not a gate on this one — but a real regression still shows up as a
+  # failed job rather than as silence.
+  analyzer:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ask Ruff directly
+        run: xvfb-run -a npm run test:analyzer
+
 # Deliberately not here:
 #   - model conformance (costs money, nondeterministic) — manually triggered, see
 #     docs/engineering-plan.md §3.4

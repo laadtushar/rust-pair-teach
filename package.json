@@ -130,9 +130,10 @@
     "verify": "npm run typecheck && npm run lint && npm run test",
     "package": "vsce package --no-dependencies",
     "conformance": "vitest run --config vitest.conformance.config.ts",
-    "build:integration": "esbuild test/integration/runTest.ts test/integration/suite/index.ts test/integration/suite/extension.test.ts --bundle --outdir=out --outbase=test/integration --platform=node --format=cjs --external:vscode --external:mocha --external:@vscode/test-electron --out-extension:.js=.cjs",
+    "build:integration": "esbuild test/integration/runTest.ts test/integration/runAnalyzerTest.ts test/integration/suite/index.ts test/integration/suite/analyzerIndex.ts test/integration/suite/extension.test.ts test/integration/suite/analyzer.test.ts --bundle --outdir=out --outbase=test/integration --platform=node --format=cjs --external:vscode --external:mocha --external:@vscode/test-electron --out-extension:.js=.cjs",
     "test:integration": "npm run build && npm run build:integration && node out/runTest.cjs",
-    "test:webview": "vitest run --config vitest.webview.config.ts"
+    "test:webview": "vitest run --config vitest.webview.config.ts",
+    "test:analyzer": "npm run build && npm run build:integration && node out/runAnalyzerTest.cjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

@@ -254,10 +254,14 @@ the log at the bottom. A run with no recorded failures and no recorded date is n
    `microsoft/vscode-pylint` produces because it sets `code_description` unconditionally. So
    `codeOf` reads the field it thinks it does.
 
-   Still unverified: that the Ruff and Pylance *VS Code extensions* put the same strings in `code`
-   that their CLIs report. Both are confirmed from source, neither observed end to end in a running
-   editor with those extensions installed. The pack carries codes *and* message patterns partly for
-   this reason — if a code arrives in an unexpected shape, the message still lands.
+   Ruff is now asked directly: CI's `analyzer` job installs the real extension, opens
+   `scope_assignment.py`, and asserts the diagnostic that actually arrives resolves to
+   `python/scope.assignment`. That job is `continue-on-error` — a Marketplace outage is not this
+   project's failure — so read its result rather than assuming the build being green covers it.
+
+   Still unverified: Pylance. It is proprietary and licensed to official builds, so its code shape
+   stays source-confirmed only. The pack carries codes *and* message patterns partly for this
+   reason — if a code arrives in an unexpected shape, the message still lands.
 3. ~~**S1.4 pack loading**~~ — verified 2026-08-11: the paths are present in the `.vsix` at the
    location `loadPackFromDisk` expects. Runtime resolution itself is still untested, but the files
    are demonstrably where the code looks for them.
