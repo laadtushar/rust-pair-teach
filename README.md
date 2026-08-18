@@ -89,19 +89,38 @@ The full diagram, data model, prompting contract, and heuristics live in
    **Show what gets sent to the model** prints the exact payload so the claim is checkable rather
    than trusted.
 
-## Try it
+## Install it
+
+Not on the Marketplace yet, so it installs from a `.vsix`. Download the latest from
+[Releases](https://github.com/laadtushar/rust-pair-teach/releases/latest), then either:
+
+**From the VS Code UI** — Extensions panel → `…` menu (top right) → *Install from VSIX…* → pick the
+downloaded file.
+
+**Or from a terminal:**
+
+```bash
+code --install-extension rust-pair-teacher-0.14.1.vsix
+```
+
+Reload the window, open a Rust or Python file, and click the sensei icon in the activity bar.
+
+macOS note: if `code` is not on your PATH, run *Shell Command: Install 'code' command in PATH* from
+the command palette first, or just use the UI route.
+
+## Build it yourself
 
 ```bash
 npm install
-npm run verify         # typecheck, lint, 293 unit tests
+npm run verify         # typecheck, lint, 294 unit tests
 npm run test:webview   # the panel, rendered and driven in a real browser (13 tests)
 npm run test:analyzer  # installs the real Ruff extension and asks what it actually emits
-npm run build      # bundle
-npm run package    # .vsix you can install
+npm run build          # bundle
+npm run package        # produces the .vsix
 ```
 
-Then press <kbd>F5</kbd> in VS Code to launch an Extension Development Host, open a Rust project,
-and click the sensei icon.
+Or press <kbd>F5</kbd> in VS Code to launch an Extension Development Host without installing
+anything, which is the better loop if you intend to change the code.
 
 **Conversation needs a model; the course does not.** Run **Rust Pair Teacher: Set up a teaching
 model** and pick Ollama — free, local, no key, and nothing leaves your machine. Keys go to the OS
